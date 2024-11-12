@@ -13,13 +13,10 @@ def compressed_to_banded(
     ----------
     M_flatten_cols : np.ndarray
         A 2D numpy array containing the flattened banded matrix columns.
+    M_banded : np.ndarray
+        The dense banded matrix, in-place.
     symmetric : bool
         Indicate if the input matrix is symmetric. Default is False.
-
-    Returns
-    -------
-    np.ndarray
-        The dense banded matrix.
     """
     # Get dimensions
     column_bandwidth, inner_dim = M_flatten_cols.shape
@@ -31,8 +28,6 @@ def compressed_to_banded(
 
         if symmetric:
             M_banded[i, i:i+num_elements] = M_flatten_cols[:num_elements, i]
-
-    return M_banded
 
 
 def scpobasi(L_flatten_cols: np.ndarray, L_flatten_arrow: int) -> np.ndarray:
@@ -93,7 +88,7 @@ def scpobasi(L_flatten_cols: np.ndarray, L_flatten_arrow: int) -> np.ndarray:
         # L lower diagonal slice, L_{i+1, i}, size bx1 in most cases
         L_Ei = L_flatten_cols[1:tail+1, -i]
 
-        X_i1i1.fill(0.08)
+        X_i1i1.fill(0.0)
         # X diagonal block i+1, X_{i+1, i+1}, size bxb
         compressed_to_banded(
             A_flatten_cols[:tail, n-i+1:n-i+1+tail],
@@ -108,7 +103,8 @@ def scpobasi(L_flatten_cols: np.ndarray, L_flatten_arrow: int) -> np.ndarray:
         # X_{i+1, i} = (-X_{i+1, i+1} L_{i+1, i} -
         #              X_{ndb+1, i+1}^{T} L_{ndb+1, i}) L_{i, i}^{-1}
         # size dx1 in most cases
-        X_i1_i = - ( X_i1i1[:tail, :tail] @ L_Ei + X_ndb1_i1.conj().T @ L_Fi) * iL_Di
+        X_i1_i = - (X_i1i1[:tail, :tail] @ L_Ei +
+                    X_ndb1_i1.conj().T @ L_Fi) * iL_Di
         A_flatten_cols[1:tail+1, -i] = X_i1_i
 
         # --- Arrowhead part ---
