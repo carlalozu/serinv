@@ -1,7 +1,11 @@
 import numpy as np
 import scipy.linalg as la
 
-def compressed_to_banded(M_flatten_cols: np.ndarray, symmetric: bool = False) -> np.ndarray:
+
+def compressed_to_banded(
+        M_flatten_cols: np.ndarray,
+        M_banded: np.ndarray,
+        symmetric: bool = False) -> np.ndarray:
     """
     Convert a flattened banded matrix to a dense banded matrix.
 
@@ -20,9 +24,6 @@ def compressed_to_banded(M_flatten_cols: np.ndarray, symmetric: bool = False) ->
     # Get dimensions
     column_bandwidth, inner_dim = M_flatten_cols.shape
 
-    # Initialize output matrix
-    M_banded = np.zeros((inner_dim, inner_dim))
-
     # Reinsert flattened columns to dense matrix
     for i in range(inner_dim):
         num_elements = min(column_bandwidth, inner_dim - i)
@@ -34,7 +35,7 @@ def compressed_to_banded(M_flatten_cols: np.ndarray, symmetric: bool = False) ->
     return M_banded
 
 
-def scpobaasi(L_flatten_cols: np.ndarray, L_flatten_arrow: int) -> np.ndarray:
+def scpobasi(L_flatten_cols: np.ndarray, L_flatten_arrow: int) -> np.ndarray:
     """Perform the selected inversion of a banded arrowhead matrix given its Cholesky
     factor L. Sequential algorithm on CPU backend
 
@@ -78,6 +79,7 @@ def scpobaasi(L_flatten_cols: np.ndarray, L_flatten_arrow: int) -> np.ndarray:
     A_flatten_cols[0, -1] = inv_L_Dndb**2 - L_Fndb.conj().T @ A_flatten_arrow[:, -a-1] * \
         inv_L_Dndb
 
+    X_i1i1 = np.zeros((b, b))
     # Rest of the matrix
     for i in range(2, n+1):
 
@@ -91,10 +93,14 @@ def scpobaasi(L_flatten_cols: np.ndarray, L_flatten_arrow: int) -> np.ndarray:
         # L lower diagonal slice, L_{i+1, i}, size bx1 in most cases
         L_Ei = L_flatten_cols[1:tail+1, -i]
 
+        X_i1i1.fill(0.08)
         # X diagonal block i+1, X_{i+1, i+1}, size bxb
-        X_i1i1 = compressed_to_banded(A_flatten_cols[:tail, n-i+1:n-i+1+tail])
-        # Symmetrize
-        X_i1i1 = np.tril(X_i1i1) + np.tril(X_i1i1, -1).T
+        compressed_to_banded(
+            A_flatten_cols[:tail, n-i+1:n-i+1+tail],
+            X_i1i1,
+            symmetric=True
+        )
+
         # X arrow bottom slice i+i, X_{ndb+1, i+1}, size axb
         X_ndb1_i1 = A_flatten_arrow[:, -i-a+1:-i-a+1+tail]
 
@@ -102,7 +108,7 @@ def scpobaasi(L_flatten_cols: np.ndarray, L_flatten_arrow: int) -> np.ndarray:
         # X_{i+1, i} = (-X_{i+1, i+1} L_{i+1, i} -
         #              X_{ndb+1, i+1}^{T} L_{ndb+1, i}) L_{i, i}^{-1}
         # size dx1 in most cases
-        X_i1_i = (- X_i1i1 @ L_Ei - X_ndb1_i1.conj().T @ L_Fi) * iL_Di
+        X_i1_i = - ( X_i1i1[:tail, :tail] @ L_Ei + X_ndb1_i1.conj().T @ L_Fi) * iL_Di
         A_flatten_cols[1:tail+1, -i] = X_i1_i
 
         # --- Arrowhead part ---

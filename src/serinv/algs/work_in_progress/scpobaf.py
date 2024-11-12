@@ -1,8 +1,44 @@
 import numpy as np
-from utils import extract_diagonals
 
 
-def scpobaaf(
+def extract_diagonals(matrix, start_row=0, end_row=0):
+    """
+    Extract diagonals from a matrix using np.diagonal() with offset.
+
+    Parameters:
+    matrix : numpy.ndarray
+        Input matrix
+    start_row : int
+        Starting row index for diagonal extraction
+    end_row : int
+        Ending row index for diagonal extraction
+
+    Returns:
+    numpy.ndarray
+        Matrix containing extracted diagonals
+    """
+    n = matrix.shape[1]
+    result = np.zeros((matrix.shape[0], matrix.shape[1]))
+
+    if not matrix.shape[1]:
+        return result
+
+    # Create intermediate array for storing diagonals
+    diags = np.zeros((end_row-start_row, n))
+
+    # Extract diagonals using diagonal() with offset
+    for i in range(end_row-start_row):
+        diagonal = matrix.diagonal(offset=-i-start_row)
+        diags[i, :len(diagonal)] = diagonal
+
+    # Place diagonals in final matrix
+    for i in range(n):
+        n_ = result[:end_row-start_row+1, i].shape[0]
+        result[:end_row-start_row, i] = diags[:, i][:n_]
+
+    return result
+
+def scpobaf(
         M_flattened_cols: np.ndarray,
         M_arrow: np.ndarray
 ) -> tuple:
