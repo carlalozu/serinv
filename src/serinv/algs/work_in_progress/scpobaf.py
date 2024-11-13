@@ -1,42 +1,31 @@
 import numpy as np
 
 
-def extract_diagonals(matrix, start_row=0, end_row=0):
+def compressed_to_banded(
+        M_flatten_cols: np.ndarray,
+        M_banded: np.ndarray,
+):
     """
-    Extract diagonals from a matrix using np.diagonal() with offset.
+    Convert a flattened banded matrix to a dense banded matrix.
 
-    Parameters:
-    matrix : numpy.ndarray
-        Input matrix
-    start_row : int
-        Starting row index for diagonal extraction
-    end_row : int
-        Ending row index for diagonal extraction
-
-    Returns:
-    numpy.ndarray
-        Matrix containing extracted diagonals
+    Parameters
+    ----------
+    M_flatten_cols : np.ndarray
+        A 2D numpy array containing the flattened banded matrix columns.
+    M_banded : np.ndarray
+        The dense banded matrix, in-place.
     """
-    n = matrix.shape[1]
-    result = np.zeros((matrix.shape[0], matrix.shape[1]))
+    # Get dimensions
+    # Column bandwidth, Inner matrix dimension
+    b, n = M_flatten_cols.shape
+    k, N = M_banded.shape
+    assert n == N
 
-    if not matrix.shape[1]:
-        return result
-
-    # Create intermediate array for storing diagonals
-    diags = np.zeros((end_row-start_row, n))
-
-    # Extract diagonals using diagonal() with offset
-    for i in range(end_row-start_row):
-        diagonal = matrix.diagonal(offset=-i-start_row)
-        diags[i, :len(diagonal)] = diagonal
-
-    # Place diagonals in final matrix
+    # Reinsert flattened columns to dense matrix
     for i in range(n):
-        n_ = result[:end_row-start_row+1, i].shape[0]
-        result[:end_row-start_row, i] = diags[:, i][:n_]
+        n_ = min(b, k - i)  # Number of elements that fit in this column
+        M_banded[i:i+n_, i] = M_flatten_cols[:n_, i]
 
-    return result
 
 def scpobaf(
         M_flattened_cols: np.ndarray,
@@ -64,6 +53,7 @@ def scpobaf(
     A_flattened_cols = np.zeros(M_flattened_cols.shape)
     A_arrow = np.zeros(M_arrow.shape)
 
+    A_decompressed = np.zeros((bandwidth, bandwidth))
     # Process banded part of the matrix
     for col_idx in range(matrix_size):
         # Define the starting index for the current column
@@ -79,17 +69,17 @@ def scpobaf(
             np.dot(prev_elements, prev_elements.conj())
         )
 
-        # Extract diagonal elements for column compressed storage
-        diag_elements = extract_diagonals(
-            np.fliplr(A_flattened_cols[1:, start_idx:col_idx]),
-            start_row=1,
-            end_row=bandwidth
-        )
+        A_decompressed.fill(0.0)
+        compressed_to_banded(
+            np.flipud(np.fliplr(A_flattened_cols[1:, start_idx:col_idx])),
+            A_decompressed[1:, :col_idx-start_idx]
+)
 
         # Compute column elements within bandwidth
         A_flattened_cols[1:, col_idx] = (
             M_flattened_cols[1:, col_idx] -
-            np.matmul(prev_elements.conj(), np.fliplr(diag_elements).T)
+            np.matmul(prev_elements.conj(), np.fliplr(
+                np.flipud(A_decompressed[:, :col_idx-start_idx])).T)
         ) / A_flattened_cols[0, col_idx]
 
         # Compute arrow part
