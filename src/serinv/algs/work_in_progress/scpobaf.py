@@ -26,15 +26,14 @@ def scpobaf(
     A_flattened_cols = np.zeros(M_flattened_cols.shape)
     A_arrow = np.zeros(M_arrow.shape)
 
-    A_decompressed = np.zeros((bandwidth, bandwidth))
+    A_decompressed = np.zeros((bandwidth+1, bandwidth+1))
     # Process banded part of the matrix
     for col_idx in range(matrix_size):
         # Define the starting index for the current column
         start_idx = max(col_idx - bandwidth, 0)
 
         # Extract previous elements needed for computation
-        prev_elements = np.flip(
-            np.diag(np.fliplr(A_flattened_cols[1:, start_idx:col_idx])))
+        prev_elements = A_decompressed[0, max(1, bandwidth-col_idx+1):]
 
         # Compute diagonal element
         A_flattened_cols[0, col_idx] = np.sqrt(
@@ -47,12 +46,10 @@ def scpobaf(
             M_flattened_cols[1:, col_idx] -
             np.matmul(
                 prev_elements.conj(),
-                A_decompressed[:, max(bandwidth-col_idx, 0):].T
+                A_decompressed[1:, max(bandwidth-col_idx, 0)+1:].T
             )
         ) / A_flattened_cols[0, col_idx]
         A_flattened_cols[1:, col_idx] = X_i1_i
-        A_decompressed[:-1, :-1] = A_decompressed[1:, 1:]
-        A_decompressed[:-1, -1] = X_i1_i[1:]
 
         # Compute arrow part
         A_arrow[:, col_idx] = (
@@ -61,6 +58,9 @@ def scpobaf(
                       A_arrow[:, start_idx:col_idx].T)
         ) / A_flattened_cols[0, col_idx]
 
+        # Change this last because prev_elements is referencing A_decompressed
+        A_decompressed[:-1, :-1] = A_decompressed[1:, 1:]
+        A_decompressed[:-1, -1] = X_i1_i
 
     # Process arrow part
     for arrow_idx in range(arrow_size - 1):
