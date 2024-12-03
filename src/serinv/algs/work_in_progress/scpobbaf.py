@@ -40,7 +40,7 @@ def scpobbaf(
 
     L_inv_temp = np.zeros((diag_blocksize, diag_blocksize))
 
-    n_offdiags_blk = ndiags // 2
+    n_offdiags_blk = ndiags - 1
 
     n_diag_blocks = (A.shape[0] - arrow_blocksize) // diag_blocksize
     for i in range(0, n_diag_blocks - 1):
@@ -169,3 +169,160 @@ def scpobbaf(
     L[:] = L * np.tri(*L.shape, k=0)
 
     return L
+
+### SCPOBBAF in compressed format
+def scpobbaf_c(
+    A_flatten_cols: np.ndarray,
+    A_flatten_arrow: np.ndarray,
+    ndiags: int,
+    diag_blocksize: int,
+    arrow_blocksize: int,
+    overwrite: bool = False,
+) -> np.ndarray:
+    """Perform the cholesky factorization of a block n-diagonals arrowhead
+    matrix. The matrix is assumed to be symmetric positive definite.
+
+    Parameters
+    ----------
+    A : np.ndarray
+        Input matrix to decompose.
+    ndiags : int
+        Number of diagonals of the matrix.
+    diag_blocksize : int
+        Blocksize of the diagonals blocks of the matrix.
+    arrow_blocksize : int
+        Blocksize of the blocks composing the arrowhead.
+    overwrite : bool
+        If True, the input matrix A is modified in place. Default is False.
+
+    Returns
+    -------
+    L : np.ndarray
+        The cholesky factorization of the matrix.
+    """
+
+    if overwrite:
+        L_flatten_cols = A_flatten_cols
+        L_flatten_arrow = A_flatten_arrow
+    else:
+        L_flatten_cols = np.copy(A_flatten_cols)
+        L_flatten_arrow = np.copy(A_flatten_arrow)
+
+    L_inv_temp = np.zeros((diag_blocksize, diag_blocksize))
+
+    n_offdiags_blk = ndiags - 1
+
+    n_diag_blocks = A_flatten_cols.shape[1] // diag_blocksize
+    for i in range(n_diag_blocks - 1):
+        # L_{i, i} = chol(A_{i, i})
+        L_flatten_cols[
+            : diag_blocksize,
+            i * diag_blocksize : (i + 1) * diag_blocksize,
+        ] = la.cholesky(
+            L_flatten_cols[
+                : diag_blocksize,
+                i * diag_blocksize : (i + 1) * diag_blocksize,
+            ]
+        ).T
+
+        # Temporary storage of re-used triangular solving
+        L_inv_temp = la.solve_triangular(
+            L_flatten_cols[
+                : diag_blocksize,
+                i * diag_blocksize : (i + 1) * diag_blocksize,
+            ],
+            np.eye(diag_blocksize),
+            lower=True,
+        ).T
+
+        for j in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
+            # L_{i+j, i} = A_{i+j, i} @ L_{i, i}^{-T}
+            L_flatten_cols[
+                j * diag_blocksize : (j + 1) * diag_blocksize,
+                i * diag_blocksize : (i + 1) * diag_blocksize,
+            ] = (
+                L_flatten_cols[
+                    j * diag_blocksize : (j + 1) * diag_blocksize,
+                    i * diag_blocksize : (i + 1) * diag_blocksize,
+                ]
+                @ L_inv_temp
+            )
+
+            for k in range(1, j + 1):
+                # L_{i+j, i+k} = A_{i+j, i+k} - L_{i+j, i} @ L_{i+k, i}^{T}
+                L_flatten_cols[
+                    j * diag_blocksize : (j + 1) * diag_blocksize,
+                    (i + k) * diag_blocksize : (i + k + 1) * diag_blocksize,
+                ] = (
+                    L_flatten_cols[
+                        j * diag_blocksize : (j + 1) * diag_blocksize,
+                        (i + k) * diag_blocksize : (i + k + 1) * diag_blocksize,
+                    ]
+                    - L_flatten_cols[
+                        j * diag_blocksize : (j + 1) * diag_blocksize,
+                        i * diag_blocksize : (i + 1) * diag_blocksize,
+                    ]
+                    @ L_flatten_cols[
+                        k * diag_blocksize : (k + 1) * diag_blocksize,
+                        i * diag_blocksize : (i + 1) * diag_blocksize,
+                    ].T
+                )
+
+        # Part of the decomposition for the arrowhead structure
+        # L_{ndb+1, i} = A_{ndb+1, i} @ L_{i, i}^{-T}
+        L_flatten_arrow[:, i * diag_blocksize : (i + 1) * diag_blocksize] = (
+            L_flatten_arrow[:, i * diag_blocksize : (i + 1) * diag_blocksize]
+            @ L_inv_temp
+        )
+
+        for k in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
+            # L_{ndb+1, i+k} = A_{ndb+1, i+k} - L_{ndb+1, i} @ L_{i+k, i}^{T}
+            L_flatten_arrow[
+                :, (i + k) * diag_blocksize : (i + k + 1) * diag_blocksize,
+            ] = (
+                L_flatten_arrow[
+                    :, (i + k) * diag_blocksize : (i + k + 1) * diag_blocksize,
+                ]
+                - L_flatten_arrow[:, i * diag_blocksize : (i + 1) * diag_blocksize]
+                @ L_flatten_cols[
+                    k * diag_blocksize : (k + 1) * diag_blocksize,
+                    i * diag_blocksize : (i + 1) * diag_blocksize,
+                ].T
+            )
+
+        # L_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}^{T}
+        L_flatten_arrow[:, -arrow_blocksize:] = (
+            L_flatten_arrow[:, -arrow_blocksize:]
+            - L_flatten_arrow[:, i * diag_blocksize : (i + 1) * diag_blocksize]
+            @ L_flatten_arrow[:, i * diag_blocksize : (i + 1) * diag_blocksize].T
+        )
+
+    # L_{ndb, ndb} = chol(A_{ndb, ndb})
+    L_flatten_cols[:diag_blocksize,  -diag_blocksize:] = \
+        la.cholesky(
+        L_flatten_cols[:diag_blocksize,  -diag_blocksize:]
+    ).T
+
+    # L_{ndb+1, nbd} = A_{ndb+1, nbd} @ L_{ndb, ndb}^{-T}
+    L_flatten_arrow[:, -diag_blocksize - arrow_blocksize : -arrow_blocksize] = (
+        L_flatten_arrow[:, -diag_blocksize - arrow_blocksize : -arrow_blocksize]
+        @ la.solve_triangular(
+            L_flatten_cols[:diag_blocksize, -diag_blocksize:],
+            np.eye(diag_blocksize),
+            lower=True,
+        ).T
+    )
+
+    # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, ndb} @ L_{ndb+1, ndb}^{T}
+    L_flatten_arrow[:, -arrow_blocksize:] = (
+        L_flatten_arrow[:, -arrow_blocksize:]
+        - L_flatten_arrow[:, -diag_blocksize - arrow_blocksize : -arrow_blocksize]
+        @ L_flatten_arrow[:, -diag_blocksize - arrow_blocksize : -arrow_blocksize].T
+    )
+
+    # L_{ndb+1, ndb+1} = chol(A_{ndb+1, ndb+1})
+    L_flatten_arrow[:, -arrow_blocksize:] = la.cholesky(
+        L_flatten_arrow[:, -arrow_blocksize:]
+    ).T
+
+    return (L_flatten_cols, L_flatten_arrow)
