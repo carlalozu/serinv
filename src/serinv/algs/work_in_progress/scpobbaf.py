@@ -251,11 +251,11 @@ def scpobbaf_c(
             for k in range(1, j + 1):
                 # L_{i+j, i+k} = A_{i+j, i+k} - L_{i+j, i} @ L_{i+k, i}^{T}
                 L_flatten_cols[
-                    j * diag_blocksize : (j + 1) * diag_blocksize,
+                    (j - k) * diag_blocksize : (j -k + 1) * diag_blocksize,
                     (i + k) * diag_blocksize : (i + k + 1) * diag_blocksize,
                 ] = (
                     L_flatten_cols[
-                        j * diag_blocksize : (j + 1) * diag_blocksize,
+                        (j - k) * diag_blocksize : (j -k + 1) * diag_blocksize,
                         (i + k) * diag_blocksize : (i + k + 1) * diag_blocksize,
                     ]
                     - L_flatten_cols[
