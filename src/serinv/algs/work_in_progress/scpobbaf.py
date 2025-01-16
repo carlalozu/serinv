@@ -218,7 +218,8 @@ def scpobbaf_c(
         L_arrow_bottom_blocks = np.copy(A_arrow_bottom_blocks)
         L_arrow_tip_block = np.copy(A_arrow_tip_block)
 
-    n_diag_blocks, diag_blocksize, _, n_offdiags_blk = L_lower_diagonal_blocks.shape
+    n_diag_blocks, diag_blocksize, _ = L_diagonal_blocks.shape
+    n_offdiags_blk = L_lower_diagonal_blocks.shape[1]//diag_blocksize
 
     L_inv_temp = np.zeros((diag_blocksize, diag_blocksize))
 
@@ -236,24 +237,24 @@ def scpobbaf_c(
 
         for j in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
             # L_{i+j, i} = A_{i+j, i} @ L_{i, i}^{-T}
-            L_lower_diagonal_blocks[i, :, :, j - 1] = (
-                L_lower_diagonal_blocks[i, :, :, j - 1] @ L_inv_temp
+            L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:j*diag_blocksize, :] = (
+                L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:j*diag_blocksize, :] @ L_inv_temp
             )
 
             for k in range(1, j+1):
                 # L_{i+j, i+k} = A_{i+j, i+k} - L_{i+j, i} @ L_{i+k, i}^{T}
                 if j != k:
-                    L_lower_diagonal_blocks[i + k, :, :, j - k - 1] = (
-                        L_lower_diagonal_blocks[i + k, :, :, j - k - 1]
-                        - L_lower_diagonal_blocks[i, :, :, j - 1]
-                        @ L_lower_diagonal_blocks[i, :, :, k - 1].T
+                    L_lower_diagonal_blocks[i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :] = (
+                        L_lower_diagonal_blocks[i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :]
+                        - L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:(j)*diag_blocksize, :]
+                        @ L_lower_diagonal_blocks[i, (k - 1)*diag_blocksize:(k)*diag_blocksize, :].T
                     )
 
                 else:
                     L_diagonal_blocks[i+k, :, :] = (
                         L_diagonal_blocks[i+k, :, :]
-                        - L_lower_diagonal_blocks[i, :, :, j - 1]
-                        @ L_lower_diagonal_blocks[i, :, :, k - 1].T
+                        - L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:(j)*diag_blocksize, :]
+                        @ L_lower_diagonal_blocks[i, (k - 1)*diag_blocksize:(k)*diag_blocksize, :].T
                     )
 
         # Part of the decomposition for the arrowhead structure
@@ -266,7 +267,7 @@ def scpobbaf_c(
             L_arrow_bottom_blocks[i + k, :, :] = (
                 L_arrow_bottom_blocks[i + k, :, :]
                 - L_arrow_bottom_blocks[i, :, :]
-                @ L_lower_diagonal_blocks[i, :, :, k - 1].T
+                @ L_lower_diagonal_blocks[i, (k - 1)*diag_blocksize:(k)*diag_blocksize, :].T
             )
 
         # L_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}^{T}
