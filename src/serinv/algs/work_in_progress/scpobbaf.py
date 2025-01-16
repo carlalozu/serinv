@@ -1,12 +1,13 @@
 # Copyright 2023-2024 ETH Zurich. All rights reserved.
 
+from typing import Tuple
 import numpy as np
 import scipy.linalg as la
 from numpy.typing import ArrayLike
 
 
 def scpobbaf(
-    A: np.ndarray,
+    A: ArrayLike,
     ndiags: int,
     diag_blocksize: int,
     arrow_blocksize: int,
@@ -17,7 +18,7 @@ def scpobbaf(
 
     Parameters
     ----------
-    A : np.ndarray
+    A : ArrayLike
         Input matrix to decompose.
     ndiags : int
         Number of diagonals of the matrix.
@@ -30,7 +31,7 @@ def scpobbaf(
 
     Returns
     -------
-    L : np.ndarray
+    L : ArrayLike
         The cholesky factorization of the matrix.
     """
 
@@ -182,29 +183,33 @@ def scpobbaf_c(
     A_arrow_bottom_blocks: ArrayLike,
     A_arrow_tip_block: ArrayLike,
     overwrite: bool = False,
-) -> np.ndarray:
-    """Perform the cholesky factorization of a block n-diagonals arrowhead
-    matrix. The matrix is assumed to be symmetric positive definite.
+) -> Tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
+    """Perform the Cholesky factorization of a block n-diagonals arrowhead
+    matrix in compressed format. The matrix is assumed to be symmetric positive definite.
 
     Parameters
     ----------
-    A : np.ndarray
-        Input matrix to decompose.
-    A_diagonal_blocks : int
-        Number of diagonals of the matrix.
-    A_lower_diagonal_blocks : int
-        Blocksize of the diagonals blocks of the matrix.
-    A_arrow_bottom_blocks : int
-        Blocksize of the blocks composing the arrowhead.
+    A_diagonal_blocks : ArrayLike
+        Blocks of the main diagonal of the matrix.
+    A_lower_diagonal_blocks : ArrayLike
+        Blocks of the lower diagonals of the matrix.
+    A_arrow_bottom_blocks : ArrayLike
+        Blocks of the arrow part.
     A_arrow_tip_block : ArrayLike
-        TODO: correct
-    overwrite : bool
-        If True, the input matrix A is modified in place. Default is False.
+        Tip of the arrow, lower right corner.
+    overwrite : bool, optional
+        If True, the inputs are modified in place. Default is False.
 
     Returns
     -------
-    L : np.ndarray
-        The cholesky factorization of the matrix.
+    L_diagonal_blocks : ArrayLike
+        The diagonal blocks of the Cholesky factor.
+    L_lower_diagonal_blocks : ArrayLike
+        The lower diagonal blocks of the Cholesky factor.
+    L_arrow_bottom_blocks : ArrayLike
+        The arrow bottom blocks of the Cholesky factor.
+    L_arrow_tip_block : ArrayLike
+        The arrow tip block of the Cholesky factor.
     """
 
     if overwrite:
@@ -219,6 +224,7 @@ def scpobbaf_c(
         L_arrow_tip_block = np.copy(A_arrow_tip_block)
 
     n_diag_blocks, diag_blocksize, _ = L_diagonal_blocks.shape
+    # Number of lower diagonals, total bandwidth is n_offdiags_blk*2+1
     n_offdiags_blk = L_lower_diagonal_blocks.shape[1]//diag_blocksize
 
     L_inv_temp = np.zeros((diag_blocksize, diag_blocksize))
@@ -238,7 +244,8 @@ def scpobbaf_c(
         for j in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
             # L_{i+j, i} = A_{i+j, i} @ L_{i, i}^{-T}
             L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:j*diag_blocksize, :] = (
-                L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:j*diag_blocksize, :] @ L_inv_temp
+                L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:j *
+                                        diag_blocksize, :] @ L_inv_temp
             )
 
             for k in range(1, j+1):
@@ -246,15 +253,15 @@ def scpobbaf_c(
                 if j != k:
                     L_lower_diagonal_blocks[i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :] = (
                         L_lower_diagonal_blocks[i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :]
-                        - L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:(j)*diag_blocksize, :]
-                        @ L_lower_diagonal_blocks[i, (k - 1)*diag_blocksize:(k)*diag_blocksize, :].T
+                        - L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:j*diag_blocksize, :]
+                        @ L_lower_diagonal_blocks[i, (k - 1)*diag_blocksize:k*diag_blocksize, :].T
                     )
 
                 else:
                     L_diagonal_blocks[i+k, :, :] = (
                         L_diagonal_blocks[i+k, :, :]
-                        - L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:(j)*diag_blocksize, :]
-                        @ L_lower_diagonal_blocks[i, (k - 1)*diag_blocksize:(k)*diag_blocksize, :].T
+                        - L_lower_diagonal_blocks[i, (j - 1)*diag_blocksize:j*diag_blocksize, :]
+                        @ L_lower_diagonal_blocks[i, (k - 1)*diag_blocksize:k*diag_blocksize, :].T
                     )
 
         # Part of the decomposition for the arrowhead structure
@@ -267,7 +274,7 @@ def scpobbaf_c(
             L_arrow_bottom_blocks[i + k, :, :] = (
                 L_arrow_bottom_blocks[i + k, :, :]
                 - L_arrow_bottom_blocks[i, :, :]
-                @ L_lower_diagonal_blocks[i, (k - 1)*diag_blocksize:(k)*diag_blocksize, :].T
+                @ L_lower_diagonal_blocks[i, (k - 1)*diag_blocksize:k*diag_blocksize, :].T
             )
 
         # L_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}^{T}
