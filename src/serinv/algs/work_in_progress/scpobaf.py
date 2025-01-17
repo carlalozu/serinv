@@ -1,87 +1,111 @@
 import numpy as np
+from numpy.typing import ArrayLike
+
 
 def scpobaf(
-        M_flattened_cols: np.ndarray,
-        M_arrow: np.ndarray
+    A_diagonal: ArrayLike,
+    A_lower_diagonals: ArrayLike,
+    A_arrow_bottom: ArrayLike,
+    A_arrow_tip: ArrayLike,
+    overwrite: bool = False
 ) -> tuple:
     """Performs Cholesky factorization of a banded arrowhead matrix.
 
     Parameters
     ----------
-    M_flattened_cols : np.ndarray
+    A_diagonal: ArrayLike
+        TODO
+    A_lower_diagonals: ArrayLike
         The banded part of the matrix in flattened column format
-    M_arrow : np.ndarray
+    A_arrow_bottom: ArrayLike
         The arrow part of the matrix in flattened column format
+    A_arrow_tip: ArrayLike
+        TODO
+    overwrite: bool
+        TODO
 
     Returns
     -------
     tuple(np.ndarray, np.ndarray)
         Lower triangular matrices (band and arrow parts) such that A = LL^T
     """
-    bandwidth = M_flattened_cols.shape[0] - 1
-    arrow_size = M_arrow.shape[0]
-    matrix_size = M_flattened_cols.shape[1]
+    n_offdiags = A_lower_diagonals.shape[0]
+    matrix_size = A_diagonal.shape[0]
+    arrowhead_size = A_arrow_tip.shape[0]
 
     # Initialize result matrices
-    A_flattened_cols = np.zeros(M_flattened_cols.shape)
-    A_arrow = np.zeros(M_arrow.shape)
+    if overwrite:
+        L_diagonal = A_diagonal
+        L_lower_diagonals = A_lower_diagonals
+        L_arrow_bottom = A_arrow_bottom
+        L_arrow_tip = A_arrow_tip
+    else:
+        L_diagonal = np.copy(A_diagonal)
+        L_lower_diagonals = np.copy(A_lower_diagonals)
+        L_arrow_bottom = np.copy(A_arrow_bottom)
+        L_arrow_tip = np.copy(A_arrow_tip)
 
-    A_decompressed = np.zeros((bandwidth+1, bandwidth+1))
+    L_temp = np.zeros((n_offdiags+1, n_offdiags+1))
+
     # Process banded part of the matrix
     for col_idx in range(matrix_size):
         # Define the starting index for the current column
-        start_idx = max(col_idx - bandwidth, 0)
+        start_idx = max(col_idx - n_offdiags, 0)
 
         # Extract previous elements needed for computation
-        prev_elements = A_decompressed[0, max(1, bandwidth-col_idx+1):]
+        prev_elements = np.copy(L_temp[0, max(n_offdiags-col_idx+1, 1):])
 
         # Compute diagonal element
-        A_flattened_cols[0, col_idx] = np.sqrt(
-            M_flattened_cols[0, col_idx] -
+        L_diagonal[col_idx] = np.sqrt(
+            L_diagonal[col_idx] -
             np.dot(prev_elements, prev_elements.conj())
         )
 
+        # Compute arrow part
+        L_arrow_bottom[:, col_idx] = (
+            L_arrow_bottom[:, col_idx] -
+            np.matmul(prev_elements.conj(),
+                      L_arrow_bottom[:, start_idx:col_idx].T)
+        ) / L_diagonal[col_idx]
+
+        if col_idx == matrix_size-1:
+            break
+
         # Compute column elements within bandwidth
-        X_i1_i = (
-            M_flattened_cols[1:, col_idx] -
+        L_lower_diagonals[:, col_idx] = (
+            L_lower_diagonals[:, col_idx] -
             np.matmul(
                 prev_elements.conj(),
-                A_decompressed[1:, max(bandwidth-col_idx, 0)+1:].T
+                L_temp[1:, max(n_offdiags-col_idx+1, 1):].T
             )
-        ) / A_flattened_cols[0, col_idx]
-        A_flattened_cols[1:, col_idx] = X_i1_i
+        ) / L_diagonal[col_idx]
 
-        # Compute arrow part
-        A_arrow[:, col_idx] = (
-            M_arrow[:, col_idx] -
-            np.matmul(prev_elements.conj(),
-                      A_arrow[:, start_idx:col_idx].T)
-        ) / A_flattened_cols[0, col_idx]
+        # Change this last because prev_elements is referencing L_temp
+        L_temp[:-1, :-1] = L_temp[1:, 1:]
+        L_temp[:-1, -1] = np.copy(L_lower_diagonals[:, col_idx])
 
-        # Change this last because prev_elements is referencing A_decompressed
-        A_decompressed[:-1, :-1] = A_decompressed[1:, 1:]
-        A_decompressed[:-1, -1] = X_i1_i
 
     # Process arrow part
-    for arrow_idx in range(arrow_size - 1):
+    for arrow_idx in range(arrowhead_size):
         # Compute diagonal elements of arrow part
-        A_arrow[arrow_idx, matrix_size + arrow_idx] = np.sqrt(
-            M_arrow[arrow_idx, matrix_size + arrow_idx] -
-            np.dot(A_arrow[arrow_idx, :matrix_size + arrow_idx],
-                   A_arrow[arrow_idx, :matrix_size + arrow_idx])
+        L_arrow_tip[arrow_idx, arrow_idx] = np.sqrt(
+            L_arrow_tip[arrow_idx, arrow_idx] -
+            np.dot(L_arrow_bottom[arrow_idx, :],
+                   L_arrow_bottom[arrow_idx, :]) -
+            np.dot(L_arrow_tip[arrow_idx, :arrow_idx],
+                   L_arrow_tip[arrow_idx, :arrow_idx])
         )
 
         # Compute off-diagonal elements of arrow part
-        A_arrow[arrow_idx + 1:, matrix_size + arrow_idx] = (
-            M_arrow[arrow_idx + 1:, matrix_size + arrow_idx] -
-            np.matmul(A_arrow[arrow_idx, :matrix_size + arrow_idx].conj(),
-                      A_arrow[arrow_idx + 1:, :matrix_size + arrow_idx].T)
-        ) / A_arrow[arrow_idx, matrix_size + arrow_idx]
+        L_arrow_tip[arrow_idx + 1:, arrow_idx] = (
+            L_arrow_tip[arrow_idx + 1:, arrow_idx] -
+            np.matmul(
+                np.concat([L_arrow_bottom[arrow_idx, :],
+                          L_arrow_tip[arrow_idx, :arrow_idx]]).conj(),
+                np.concat([L_arrow_bottom[arrow_idx+1:, :],
+                          L_arrow_tip[arrow_idx+1:, :arrow_idx]], axis=1).T
+            )
+        ) / L_arrow_tip[arrow_idx, arrow_idx]
 
-    # Compute final diagonal element
-    A_arrow[-1, -1] = np.sqrt(
-        M_arrow[-1, -1] -
-        np.dot(A_arrow[-1, :], A_arrow[-1, :].conj())
-    )
 
-    return (A_flattened_cols, A_arrow)
+    return L_diagonal, L_lower_diagonals, L_arrow_bottom, L_arrow_tip
