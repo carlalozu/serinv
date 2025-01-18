@@ -9,25 +9,27 @@ def scpobasi(
     L_arrow_bottom: ArrayLike,
     L_arrow_tip: ArrayLike,
     overwrite: bool = False
-) -> np.ndarray:
+) -> ArrayLike:
     """Performs the selected inversion of a banded arrowhead matrix given
-      its Cholesky factor L. Sequential algorithm on CPU backend.
+      its Cholesky factor L in compressed format. Sequential algorithm on CPU backend.
 
     Parameters
     ----------
-    L_diagonal: ArrayLike
-        The main diagonal of the lower factor
-    L_lower_diagonals: ArrayLike
-        The banded part of the lower factor in flattened column format
-    L_arrow_bottom: ArrayLike
-        Lower banded arrow part of Cholesky factor
-    L_arrow_tip: ArrayLike
-        The arrow tip of the lower Cholesky factor
-    overwrite: bool = False
+    L_diagonal : ArrayLike
+        The main diagonal of the lower Cholesky factor.
+    L_lower_diagonals : ArrayLike
+        The banded part of the lower factor in flattened column format.
+    L_arrow_bottom : ArrayLike
+        Lower banded arrow part of the Cholesky factor.
+    L_arrow_tip : ArrayLike
+        The arrow tip of the lower Cholesky factor.
+    overwrite : bool, optional
+        If True, overwrite the input arrays with the result. Default is False.
+        Diagonal of the inverse.
 
     Returns
     -------
-    np.ndarray
+    ArrayLike
         Diagonal of the inverse
     """
 

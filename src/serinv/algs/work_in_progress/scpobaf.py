@@ -11,23 +11,29 @@ def scpobaf(
 ) -> tuple:
     """Performs Cholesky factorization of a banded arrowhead matrix.
 
-    Parameters
-    ----------
-    A_diagonal: ArrayLike
-        TODO
-    A_lower_diagonals: ArrayLike
-        The banded part of the matrix in flattened column format
-    A_arrow_bottom: ArrayLike
-        The arrow part of the matrix in flattened column format
-    A_arrow_tip: ArrayLike
-        TODO
-    overwrite: bool
-        TODO
+    A_diagonal : ArrayLike
+        The diagonal elements of the matrix.
+    A_lower_diagonals : ArrayLike
+        The lower diagonals of the banded part of the matrix in flattened column
+        format.
+    A_arrow_bottom : ArrayLike
+        The bottom part of the arrow in the matrix in flattened column format.
+    A_arrow_tip : ArrayLike
+        The tip of the arrow in the matrix.
+    overwrite : bool, optional
+        If True, the input arrays will be overwritten with the result. Default
+        is False.
 
-    Returns
-    -------
-    tuple(np.ndarray, np.ndarray)
-        Lower triangular matrices (band and arrow parts) such that A = LL^T
+    tuple
+        A tuple containing four elements:
+        - L_diagonal (ArrayLike): The diagonal elements of the lower triangular
+        matrix.
+        - L_lower_diagonals (ArrayLike): The lower diagonals of the lower
+        triangular matrix.
+        - L_arrow_bottom (ArrayLike): The bottom part of the arrow in the lower
+        triangular matrix.
+        - L_arrow_tip (ArrayLike): The tip of the arrow in the lower triangular
+        matrix.
     """
     n_offdiags = A_lower_diagonals.shape[0]
     matrix_size = A_diagonal.shape[0]
@@ -84,7 +90,6 @@ def scpobaf(
         L_temp[:-1, :-1] = L_temp[1:, 1:]
         L_temp[:-1, -1] = np.copy(L_lower_diagonals[:, col_idx])
 
-
     # Process arrow part
     for arrow_idx in range(arrowhead_size):
         # Compute diagonal elements of arrow part
@@ -106,6 +111,5 @@ def scpobaf(
                           L_arrow_tip[arrow_idx+1:, :arrow_idx]], axis=1).T
             )
         ) / L_arrow_tip[arrow_idx, arrow_idx]
-
 
     return L_diagonal, L_lower_diagonals, L_arrow_bottom, L_arrow_tip
