@@ -2,6 +2,7 @@
 
 import numpy as np
 import scipy.linalg as la
+from numpy.typing import ArrayLike
 
 
 def scpobbasi(
@@ -115,7 +116,6 @@ def scpobbasi(
                             i * diag_blocksize: (i + 1) * diag_blocksize,
                         ]
                     )
-                    print('i:', i, 'j:', j, 'k:', k)
                 else:
                     # X_{j, i} = X_{j, i} - X_{j, k} L_{k, i}
                     X[
@@ -131,7 +131,6 @@ def scpobbasi(
                             i * diag_blocksize: (i + 1) * diag_blocksize,
                         ]
                     )
-                    print('i:', i, 'j:', j, 'k:', k)
 
             # X_{j, i} = X_{j, i} L_{i, i}^{-1}
             X[
@@ -200,30 +199,36 @@ def scpobbasi(
 
 
 def scpobbasi_c(
-    L_diagonal_blocks,
-    L_lower_diagonal_blocks,
-    L_arrow_bottom_blocks,
-    L_arrow_tip_block,
+    L_diagonal_blocks: ArrayLike,
+    L_lower_diagonal_blocks: ArrayLike,
+    L_arrow_bottom_blocks: ArrayLike,
+    L_arrow_tip_block: ArrayLike,
     overwrite: bool = False,
-) -> np.ndarray:
-    """Perform a selected inversion of a block banded matrix using a
-    sequential algorithm on CPU backend.
+) -> tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
+    """Perform a selected inversion of a block banded matrix by means of its
+    Cholesky factor using a sequential algorithm on CPU backend.
 
     Parameters
     ----------
-    L : np.ndarray
-        The cholesky factorization of the matrix.
-    ndiags : int
-        Number of diagonals.
-    diag_blocksize : int
-        Blocksize of the diagonals blocks of the matrix.
-    arrow_blocksize : int
-        Blocksize of the blocks composing the arrowhead.
+    L_diagonal_blocks : ArrayLike
+        Diagonal blocks of the Cholesky factor.
+    L_lower_diagonal_blocks : ArrayLike
+        Lower diagonal blocks of the Cholesky factor.
+    L_arrow_bottom_blocks : ArrayLike
+        Arrow bottom blocks of the Cholesky factor.
+    L_arrow_tip_block : ArrayLike
+        Arrow tip block of the Cholesky factor.
 
     Returns
     -------
-    X : np.ndarray
-        Selected inversion of the matrix.
+    X_diagonal_blocks : ArrayLike
+        Diagonal blocks of the selected inversion of the matrix.
+    X_lower_diagonal_blocks : ArrayLike
+        Lower diagonal blocks of the selected inversion of the matrix.
+    X_arrow_bottom_blocks : ArrayLike
+        Arrow bottom blocks of the selected inversion of the matrix.
+    X_arrow_tip_block : ArrayLike
+        Arrow tip block of the selected inversion of the matrix.
     """
 
     if overwrite:
