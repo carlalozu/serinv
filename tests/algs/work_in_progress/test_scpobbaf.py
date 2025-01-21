@@ -66,9 +66,44 @@ def test_scpobbaf(
         M_lower_diagonal_blocks,
         M_arrow_bottom_blocks,
         M_arrow_tip_block,
+        overwrite=False
     )
 
     assert np.allclose(L_diagonal_blocks, L_ref_diagonal_blocks)
     assert np.allclose(L_lower_diagonal_blocks, L_ref_lower_diagonal_blocks)
     assert np.allclose(L_arrow_bottom_blocks, L_ref_arrow_bottom_blocks)
     assert np.allclose(L_arrow_tip_block, L_ref_arrow_tip_block)
+
+    # Check that the results are not overwritten
+    assert L_diagonal_blocks.ctypes.data != \
+        M_diagonal_blocks.ctypes.data
+    assert L_lower_diagonal_blocks.ctypes.data != \
+        M_lower_diagonal_blocks.ctypes.data
+    assert L_arrow_bottom_blocks.ctypes.data != \
+        M_arrow_bottom_blocks.ctypes.data
+    assert L_arrow_tip_block.ctypes.data != \
+        M_arrow_tip_block.ctypes.data
+
+    # Check overwrite option
+    (
+        L_diagonal_blocks,
+        L_lower_diagonal_blocks,
+        L_arrow_bottom_blocks,
+        L_arrow_tip_block
+    ) = scpobbaf_c(
+        M_diagonal_blocks,
+        M_lower_diagonal_blocks,
+        M_arrow_bottom_blocks,
+        M_arrow_tip_block,
+        overwrite=True
+    )
+
+    # Check that the results are overwritten
+    assert L_diagonal_blocks.ctypes.data == \
+        M_diagonal_blocks.ctypes.data
+    assert L_lower_diagonal_blocks.ctypes.data == \
+        M_lower_diagonal_blocks.ctypes.data
+    assert L_arrow_bottom_blocks.ctypes.data == \
+        M_arrow_bottom_blocks.ctypes.data
+    assert L_arrow_tip_block.ctypes.data == \
+        M_arrow_tip_block.ctypes.data
