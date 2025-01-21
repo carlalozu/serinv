@@ -10,14 +10,16 @@ from serinv.algs.work_in_progress.scpobbasi import scpobbasi_c
 @pytest.mark.parametrize("arrowhead_blocksize", [2, 3])
 @pytest.mark.parametrize("n_offdiags_blk", [1, 2, 3])
 @pytest.mark.parametrize("n_diag_blocks", [5])
+@pytest.mark.parametrize("dtype", [np.float64, np.complex128])
 def test_scpobbasi(
     dd_bba,
-    decompress_bba,
-    compress_bba,
+    bba_arrays_to_dense,
+    bba_dense_to_arrays,
     diagonal_blocksize,
     arrowhead_blocksize,
     n_offdiags_blk,
-    n_diag_blocks
+    n_diag_blocks,
+    dtype,
 ):
     # Create matrix in compressed format
     (M_diagonal_blocks,
@@ -28,10 +30,10 @@ def test_scpobbasi(
         diagonal_blocksize,
         arrowhead_blocksize,
         n_diag_blocks,
-        np.float64,
+        dtype,
     )
 
-    M = decompress_bba(
+    M = bba_arrays_to_dense(
         M_diagonal_blocks,
         M_lower_diagonal_blocks,
         M_arrow_bottom_blocks,
@@ -65,7 +67,7 @@ def test_scpobbasi(
      I_ref_lower_diagonal_blocks,
      I_ref_arrow_bottom_blocks,
      I_ref_arrow_tip_block
-     ) = compress_bba(
+     ) = bba_dense_to_arrays(
          I_ref,
          n_offdiags_blk,
          diagonal_blocksize,

@@ -317,12 +317,12 @@ def b_rhs(
 
 def spd(M_, factor_=2):
     """Makes dense matrix symmetric positive definite."""
-    # Symmetrize
-    M_ = (M_ + M_.conj().T) / 2
-
     # Make diagonally dominant
     for i in range(M_.shape[0]):
         M_[i, i] = (1 + np.sum(M_[i, :]))*factor_
+
+    # Symmetrize
+    M_ = (M_ + M_.conj().T) / 2
     return M_
 
 
@@ -391,8 +391,8 @@ def dd_bba():
 
 
 @pytest.fixture(scope="function", autouse=False)
-def decompress_bba():
-    def decompress_bba_(
+def bba_arrays_to_dense():
+    def bba_arrays_to_dense_(
         M_diagonal_blocks,
         M_lower_diagonal_blocks,
         M_arrow_bottom_blocks,
@@ -408,7 +408,7 @@ def decompress_bba():
         n_offdiags_blk = M_lower_diagonal_blocks.shape[1]//diag_blocksize
         N = diag_blocksize*n_t + arrow_blocksize
 
-        M = np.zeros((N, N))
+        M = np.zeros((N, N), dtype=M_diagonal_blocks.dtype)
 
         for i in range(n_t):
             M[
@@ -435,12 +435,12 @@ def decompress_bba():
         if symmetric:
             return (M + M.conj().T) - np.diag(np.diag(M))
         return M
-    return decompress_bba_
+    return bba_arrays_to_dense_
 
 
 @pytest.fixture(scope="function", autouse=False)
-def compress_bba():
-    def compress_bba_(
+def bba_dense_to_arrays():
+    def bba_dense_to_arrays_(
             M, n_offdiags_blk, diag_blocksize, arrow_blocksize, lower=True
     ):
         """
@@ -456,16 +456,16 @@ def compress_bba():
 
         # Initialize compressed storage arrays
         M_diagonal_blocks = np.zeros(
-            (n_t, diag_blocksize, diag_blocksize))
+            (n_t, diag_blocksize, diag_blocksize), dtype=M.dtype)
 
         M_lower_diagonal_blocks = np.zeros(
-            (n_t-1, diag_blocksize*n_offdiags_blk, diag_blocksize))
+            (n_t-1, diag_blocksize*n_offdiags_blk, diag_blocksize), dtype=M.dtype)
 
         M_arrow_bottom_blocks = np.zeros(
-            (n_t, arrow_blocksize, diag_blocksize))
+            (n_t, arrow_blocksize, diag_blocksize), dtype=M.dtype)
 
         M_arrow_tip_block = np.zeros(
-            (arrow_blocksize, arrow_blocksize))
+            (arrow_blocksize, arrow_blocksize), dtype=M.dtype)
 
         # Extract arrowhead portion
         for i in range(n_t):
@@ -503,4 +503,4 @@ def compress_bba():
 
         return (M_diagonal_blocks, M_lower_diagonal_blocks,
                 M_arrow_bottom_blocks, M_arrow_tip_block)
-    return compress_bba_
+    return bba_dense_to_arrays_
