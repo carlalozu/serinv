@@ -257,14 +257,14 @@ def scpobbasi_c(
         np.eye(arrow_blocksize),
         lower=True
     )
-    X_arrow_tip_block = L_last_blk_inv.conj().T @ L_last_blk_inv
+    X_arrow_tip_block[:,:] = L_last_blk_inv.conj().T @ L_last_blk_inv
 
     L_blk_inv = np.zeros((diag_blocksize, diag_blocksize),
                          dtype=X_arrow_tip_block.dtype)
 
     for i in range(n_diag_blocks - 1, -1, -1):
         # L_blk_inv = L_{i, i}^{-1}
-        L_blk_inv = la.solve_triangular(
+        L_blk_inv[:,:] = la.solve_triangular(
             X_diagonal_blocks[i, :, :],
             np.eye(diag_blocksize),
             lower=True,
