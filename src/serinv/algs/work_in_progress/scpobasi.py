@@ -9,9 +9,10 @@ def scpobasi(
     L_arrow_bottom: ArrayLike,
     L_arrow_tip: ArrayLike,
     overwrite: bool = False
-) -> ArrayLike:
+) -> tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
     """Performs the selected inversion of a banded arrowhead matrix given
-      its Cholesky factor L in compressed format. Sequential algorithm on CPU backend.
+      its Cholesky factor L in compressed format. Sequential algorithm on CPU
+      backend.
 
     Parameters
     ----------
@@ -29,8 +30,12 @@ def scpobasi(
 
     Returns
     -------
-    ArrayLike
-        Diagonal of the inverse
+    tuple
+        A tuple containing four elements:
+        - X_diagonal (ArrayLike): The diagonal elements of the inverse.
+        - X_lower_diagonals (ArrayLike): The lower diagonals of the inverse.
+        - X_arrow_bottom (ArrayLike): The bottom part of the arrow in the inverse.
+        - X_arrow_tip (ArrayLike): The tip of the arrow in the inverse
     """
 
     n_offdiags = L_lower_diagonals.shape[0]

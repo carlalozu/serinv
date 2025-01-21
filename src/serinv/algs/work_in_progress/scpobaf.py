@@ -8,9 +8,11 @@ def scpobaf(
     A_arrow_bottom: ArrayLike,
     A_arrow_tip: ArrayLike,
     overwrite: bool = False
-) -> tuple:
+) -> tuple[ArrayLike, ArrayLike, ArrayLike, ArrayLike]:
     """Performs Cholesky factorization of a banded arrowhead matrix.
 
+    Parameters
+    ----------
     A_diagonal : ArrayLike
         The diagonal elements of the matrix.
     A_lower_diagonals : ArrayLike
@@ -24,6 +26,8 @@ def scpobaf(
         If True, the input arrays will be overwritten with the result. Default
         is False.
 
+    Returns
+    -------
     tuple
         A tuple containing four elements:
         - L_diagonal (ArrayLike): The diagonal elements of the lower triangular
