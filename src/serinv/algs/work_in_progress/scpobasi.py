@@ -63,10 +63,10 @@ def scpobasi(
     # X_{ndb+1,ndb}
     X_arrow_bottom[:, -1] = - X_arrow_tip[:, :] @ L_Fndb * inv_L_Dndb
     # X_{ndb,ndb}
-    X_diagonal[-1] = inv_L_Dndb**2 - \
+    X_diagonal[-1] = inv_L_Dndb*inv_L_Dndb.conj() - \
         L_Fndb.conj().T @ X_arrow_bottom[:, -1] * inv_L_Dndb
 
-    X_i1i1 = np.zeros((n_offdiags, n_offdiags))
+    X_i1i1 = np.zeros((n_offdiags, n_offdiags), dtype=L_diagonal.dtype)
     X_i1i1[0, 0] = X_diagonal[-1]
 
     # Rest of the matrix
@@ -94,7 +94,7 @@ def scpobasi(
 
         X_i1i1[1:, 1:] = X_i1i1[:-1, :-1]
         X_i1i1[1:min(i, n_offdiags), 0] = X_i1_i[:min(i, n_offdiags-1)]
-        X_i1i1[0, 1:min(i, n_offdiags)] = X_i1_i[:min(i, n_offdiags-1)]
+        X_i1i1[0, 1:min(i, n_offdiags)] = X_i1_i[:min(i, n_offdiags-1)].conj()
 
         # --- Arrowhead part ---
         # X_{ndb+1, i} = (- X_{ndb+1, i+1} L_{i+1, i} -
@@ -111,4 +111,4 @@ def scpobasi(
         ) * iL_Di
         X_i1i1[0, 0] = X_diagonal[matrix_size-i]
 
-    return np.concat([X_diagonal, np.diag(X_arrow_tip)])
+    return (X_diagonal, X_lower_diagonals, X_arrow_bottom, X_arrow_tip)

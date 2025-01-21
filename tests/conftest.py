@@ -346,6 +346,7 @@ def dd_ba():
         # Make diagonally dominant
         for i in range(n):
             A_diagonal[i] = (1 + xp.sum(A_arrow_bottom[:, i]))*2
+        A_diagonal[:] = (A_diagonal[:] + A_diagonal[:].conj())/2
 
         for i in range(arrowhead_size):
             A_arrow_tip[i, i] = (1 + xp.sum(A_arrow_bottom[:, i]))*2
@@ -354,7 +355,7 @@ def dd_ba():
         A_lower_diagonals[-n_offdiags:, -n_offdiags:] = np.fliplr(
             np.triu(np.fliplr(A_lower_diagonals[-n_offdiags:, -n_offdiags:])))
 
-        A_arrow_tip[:, :] = np.tril(A_arrow_tip[:, :])
+        A_arrow_tip[:, :] = np.tril(A_arrow_tip[:, :] + A_arrow_tip[:, :].conj().T)/2
 
         return (A_diagonal,
                 A_lower_diagonals,
@@ -364,8 +365,8 @@ def dd_ba():
 
 
 @pytest.fixture(scope="function", autouse=False)
-def compress_ba():
-    def compress_ba_(
+def ba_dense_to_arrays():
+    def ba_dense_to_arrays_(
             M: ArrayLike,
             n_offdiags: int,
             arrowhead_size: int
@@ -382,10 +383,10 @@ def compress_ba():
         n = M.shape[0] - arrowhead_size
 
         # Initialize compressed storage arrays
-        M_diagonal = np.zeros(n)
-        M_lower_diagonals = np.zeros((n_offdiags, n-1))
-        M_arrow_bottom = np.zeros((arrowhead_size, n))
-        M_arrow_tip = np.zeros((arrowhead_size, arrowhead_size))
+        M_diagonal = np.zeros(n, dtype=M.dtype)
+        M_lower_diagonals = np.zeros((n_offdiags, n-1), dtype=M.dtype)
+        M_arrow_bottom = np.zeros((arrowhead_size, n), dtype=M.dtype)
+        M_arrow_tip = np.zeros((arrowhead_size, arrowhead_size), dtype=M.dtype)
 
         # Retrieve info for arrowhead
         M_arrow_bottom[:, :] = M[-arrowhead_size:, :-arrowhead_size]
@@ -404,11 +405,11 @@ def compress_ba():
                 M_lower_diagonals,
                 M_arrow_bottom,
                 M_arrow_tip)
-    return compress_ba_
+    return ba_dense_to_arrays_
 
 @pytest.fixture(scope="function", autouse=False)
-def decompress_ba():
-    def decompress_ba_(
+def ba_arrays_to_dense():
+    def ba_arrays_to_dense_(
         M_diagonal: ArrayLike,
         M_lower_diagonals: ArrayLike,
         M_arrow_bottom: ArrayLike,
@@ -425,7 +426,7 @@ def decompress_ba():
         N = n + arrowhead_size
 
         # Initialize output matrix
-        M = np.zeros((N, N))
+        M = np.zeros((N, N), dtype=M_diagonal.dtype)
 
         # Reinsert bandwidth portion
         for i in range(n-1):
@@ -443,8 +444,8 @@ def decompress_ba():
         # Symmetrize
         M = np.tril(M)
         if symmetric:
-            M += M.T
+            M += M.conj().T
             M -= np.diag(np.diag(M))/2
 
         return M
-    return decompress_ba_
+    return ba_arrays_to_dense_
