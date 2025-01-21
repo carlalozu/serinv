@@ -91,6 +91,7 @@ def scpobaf(
         L_temp[:-1, -1] = L_lower_diagonals[:, col_idx]
 
     L_arrow_dot = np.sum(L_arrow_bottom*L_arrow_bottom.conj(), axis=1)
+    L_arrow_matmul = np.matmul(L_arrow_bottom.conj(), L_arrow_bottom.T)
     # Process arrow part
     for arrow_idx in range(arrowhead_size):
         # Compute diagonal elements of arrow part
@@ -104,11 +105,10 @@ def scpobaf(
         # Compute off-diagonal elements of arrow part
         L_arrow_tip[arrow_idx + 1:, arrow_idx] = (
             L_arrow_tip[arrow_idx + 1:, arrow_idx] -
+            L_arrow_matmul[arrow_idx, arrow_idx+1:] -
             np.matmul(
-                np.concat([L_arrow_bottom[arrow_idx, :],
-                          L_arrow_tip[arrow_idx, :arrow_idx]]).conj(),
-                np.concat([L_arrow_bottom[arrow_idx+1:, :],
-                          L_arrow_tip[arrow_idx+1:, :arrow_idx]], axis=1).T
+                L_arrow_tip[arrow_idx, :arrow_idx].conj(),
+                L_arrow_tip[arrow_idx+1:, :arrow_idx].T
             )
         ) / L_arrow_tip[arrow_idx, arrow_idx]
 
