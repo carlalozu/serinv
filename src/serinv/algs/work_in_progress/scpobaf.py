@@ -51,7 +51,7 @@ def scpobaf(
         L_arrow_bottom = np.copy(A_arrow_bottom)
         L_arrow_tip = np.copy(A_arrow_tip)
 
-    L_temp = np.zeros((n_offdiags+1, n_offdiags+1))
+    L_temp = np.zeros((n_offdiags+1, n_offdiags+1), dtype=A_diagonal.dtype)
 
     # Process banded part of the matrix
     for col_idx in range(matrix_size):
@@ -88,17 +88,17 @@ def scpobaf(
 
         # Change this last because prev_elements is referencing L_temp
         L_temp[:-1, :-1] = L_temp[1:, 1:]
-        L_temp[:-1, -1] = np.copy(L_lower_diagonals[:, col_idx])
+        L_temp[:-1, -1] = L_lower_diagonals[:, col_idx]
 
+    L_arrow_dot = np.sum(L_arrow_bottom*L_arrow_bottom.conj(), axis=1)
     # Process arrow part
     for arrow_idx in range(arrowhead_size):
         # Compute diagonal elements of arrow part
         L_arrow_tip[arrow_idx, arrow_idx] = np.sqrt(
             L_arrow_tip[arrow_idx, arrow_idx] -
-            np.dot(L_arrow_bottom[arrow_idx, :],
-                   L_arrow_bottom[arrow_idx, :]) -
+            L_arrow_dot[arrow_idx] -
             np.dot(L_arrow_tip[arrow_idx, :arrow_idx],
-                   L_arrow_tip[arrow_idx, :arrow_idx])
+                   L_arrow_tip[arrow_idx, :arrow_idx].conj())
         )
 
         # Compute off-diagonal elements of arrow part

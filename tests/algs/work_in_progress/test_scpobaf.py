@@ -26,13 +26,15 @@ from serinv.algs.work_in_progress.scpobaf import scpobaf
 @pytest.mark.parametrize("arrowhead_size", [2, 3])
 @pytest.mark.parametrize("n_offdiags", [1, 2, 3])
 @pytest.mark.parametrize("n", [5])
+@pytest.mark.parametrize("dtype", [np.float64, np.complex128])
 def test_scpobaf(
     dd_ba,
-    decompress_ba,
-    compress_ba,
+    ba_arrays_to_dense,
+    ba_dense_to_arrays,
     arrowhead_size,
     n_offdiags,
-    n
+    n,
+    dtype
 ):
     # Create matrix in compressed format
     (
@@ -44,10 +46,10 @@ def test_scpobaf(
         n_offdiags,
         arrowhead_size,
         n+arrowhead_size,
-        np.float64,
+        dtype,
     )
 
-    M = decompress_ba(
+    M = ba_arrays_to_dense(
         M_diagonal,
         M_lower_diagonals,
         M_arrow_bottom,
@@ -62,7 +64,7 @@ def test_scpobaf(
         L_ref_lower_diagonals,
         L_ref_arrow_bottom,
         L_ref_arrow_tip
-    ) = compress_ba(
+    ) = ba_dense_to_arrays(
         L_ref,
         n_offdiags,
         arrowhead_size
@@ -78,7 +80,7 @@ def test_scpobaf(
         M_lower_diagonals,
         M_arrow_bottom,
         M_arrow_tip,
-        False
+        overwrite=False
     )
 
 
