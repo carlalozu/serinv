@@ -10,6 +10,7 @@ from serinv.algs.work_in_progress.scpobbaf import scpobbaf_c
 @pytest.mark.parametrize("n_offdiags_blk", [1, 2, 3])
 @pytest.mark.parametrize("n_diag_blocks", [5])
 @pytest.mark.parametrize("dtype", [np.float64, np.complex128])
+@pytest.mark.parametrize("overwrite", [True, False])
 def test_scpobbaf(
     dd_bba,
     bba_arrays_to_dense,
@@ -19,6 +20,7 @@ def test_scpobbaf(
     n_offdiags_blk,
     n_diag_blocks,
     dtype,
+    overwrite,
 ):
     # Create matrix in compressed format
     (
@@ -66,7 +68,7 @@ def test_scpobbaf(
         M_lower_diagonal_blocks,
         M_arrow_bottom_blocks,
         M_arrow_tip_block,
-        overwrite=False
+        overwrite
     )
 
     assert np.allclose(L_diagonal_blocks, L_ref_diagonal_blocks)
@@ -75,35 +77,11 @@ def test_scpobbaf(
     assert np.allclose(L_arrow_tip_block, L_ref_arrow_tip_block)
 
     # Check that the results are not overwritten
-    assert L_diagonal_blocks.ctypes.data != \
-        M_diagonal_blocks.ctypes.data
-    assert L_lower_diagonal_blocks.ctypes.data != \
-        M_lower_diagonal_blocks.ctypes.data
-    assert L_arrow_bottom_blocks.ctypes.data != \
-        M_arrow_bottom_blocks.ctypes.data
-    assert L_arrow_tip_block.ctypes.data != \
-        M_arrow_tip_block.ctypes.data
-
-    # Check overwrite option
-    (
-        L_diagonal_blocks,
-        L_lower_diagonal_blocks,
-        L_arrow_bottom_blocks,
-        L_arrow_tip_block
-    ) = scpobbaf_c(
-        M_diagonal_blocks,
-        M_lower_diagonal_blocks,
-        M_arrow_bottom_blocks,
-        M_arrow_tip_block,
-        overwrite=True
-    )
-
-    # Check that the results are overwritten
-    assert L_diagonal_blocks.ctypes.data == \
-        M_diagonal_blocks.ctypes.data
-    assert L_lower_diagonal_blocks.ctypes.data == \
-        M_lower_diagonal_blocks.ctypes.data
-    assert L_arrow_bottom_blocks.ctypes.data == \
-        M_arrow_bottom_blocks.ctypes.data
-    assert L_arrow_tip_block.ctypes.data == \
-        M_arrow_tip_block.ctypes.data
+    assert (L_diagonal_blocks.ctypes.data == \
+        M_diagonal_blocks.ctypes.data) is overwrite
+    assert (L_lower_diagonal_blocks.ctypes.data == \
+        M_lower_diagonal_blocks.ctypes.data) is overwrite
+    assert (L_arrow_bottom_blocks.ctypes.data == \
+        M_arrow_bottom_blocks.ctypes.data) is overwrite
+    assert (L_arrow_tip_block.ctypes.data == \
+        M_arrow_tip_block.ctypes.data) is overwrite
