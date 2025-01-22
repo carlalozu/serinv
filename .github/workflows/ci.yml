@@ -1,0 +1,32 @@
+name: Run Tests on PR
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    name: serinv tests
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: openmpi
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install mpi4py
+          pip install pytest pytest-mpi
+          pip install -e .
+        
+      - name: Run tests
+        run: |
+          pytest --cov=src/serinv --cov-report=term --cov-report=xml tests/
+          mpiexec -n 2 pytest --with-mpi tests/
