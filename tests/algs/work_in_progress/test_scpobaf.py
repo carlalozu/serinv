@@ -27,6 +27,7 @@ from serinv.algs.work_in_progress.scpobaf import scpobaf
 @pytest.mark.parametrize("n_offdiags", [1, 2, 3])
 @pytest.mark.parametrize("n", [5])
 @pytest.mark.parametrize("dtype", [np.float64, np.complex128])
+@pytest.mark.parametrize("overwrite", [True, False])
 def test_scpobaf(
     dd_ba,
     ba_arrays_to_dense,
@@ -34,7 +35,8 @@ def test_scpobaf(
     arrowhead_size,
     n_offdiags,
     n,
-    dtype
+    dtype,
+    overwrite
 ):
     # Create matrix in compressed format
     (
@@ -80,7 +82,7 @@ def test_scpobaf(
         M_lower_diagonals,
         M_arrow_bottom,
         M_arrow_tip,
-        overwrite=False
+        overwrite
     )
 
 
@@ -88,3 +90,8 @@ def test_scpobaf(
     assert np.allclose(L_ref_lower_diagonals, L_lower_diagonals)
     assert np.allclose(L_ref_arrow_bottom, L_arrow_bottom)
     assert np.allclose(L_ref_arrow_tip, L_arrow_tip)
+
+    assert (M_diagonal.ctypes.data == L_diagonal.ctypes.data) is overwrite
+    assert (M_lower_diagonals.ctypes.data == L_lower_diagonals.ctypes.data) is overwrite
+    assert (M_arrow_bottom.ctypes.data == L_arrow_bottom.ctypes.data) is overwrite
+    assert (M_arrow_tip.ctypes.data == L_arrow_tip.ctypes.data) is overwrite

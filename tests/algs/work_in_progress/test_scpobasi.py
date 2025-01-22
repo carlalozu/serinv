@@ -27,6 +27,7 @@ from serinv.algs.work_in_progress.scpobasi import scpobasi
 @pytest.mark.parametrize("n_offdiags", [1, 2, 3])
 @pytest.mark.parametrize("n", [5])
 @pytest.mark.parametrize("dtype", [np.float64, np.complex128])
+@pytest.mark.parametrize("overwrite", [True, False])
 def test_scpobasi(
     dd_ba,
     ba_arrays_to_dense,
@@ -34,7 +35,8 @@ def test_scpobasi(
     arrowhead_size,
     n_offdiags,
     n,
-    dtype
+    dtype,
+    overwrite
 ):
     (
         M_diagonal,
@@ -78,7 +80,7 @@ def test_scpobasi(
         M_lower_diagonals,
         M_arrow_bottom,
         M_arrow_tip,
-        overwrite=False
+        overwrite
     )
 
     (
@@ -91,10 +93,15 @@ def test_scpobasi(
         L_lower_diagonals,
         L_arrow_bottom,
         L_arrow_tip,
-        overwrite=False
+        overwrite
     )
 
     assert np.allclose(I_ref_diagonal, I_diagonal)
     assert np.allclose(I_ref_lower_diagonals, I_lower_diagonals)
     assert np.allclose(I_ref_arrow_bottom, I_arrow_bottom)
     assert np.allclose(I_ref_arrow_tip, np.tril(I_arrow_tip))
+
+    assert (I_diagonal.ctypes.data == M_diagonal.ctypes.data) is overwrite
+    assert (I_lower_diagonals.ctypes.data == M_lower_diagonals.ctypes.data) is overwrite
+    assert (I_arrow_bottom.ctypes.data == M_arrow_bottom.ctypes.data) is overwrite
+    assert (I_arrow_tip.ctypes.data == M_arrow_tip.ctypes.data) is overwrite
