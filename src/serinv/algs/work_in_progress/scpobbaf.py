@@ -228,93 +228,83 @@ def scpobbaf_c(
     # Number of lower diagonals, total bandwidth is n_offdiags_blk*2+1
     n_offdiags_blk = L_lower_diagonal_blocks.shape[1]//diag_blocksize
 
-    L_inv_temp = np.zeros((diag_blocksize, diag_blocksize),
-                          dtype=L_diagonal_blocks.dtype)
-
     for i in range(n_diag_blocks-1):
         # L_{i, i} = chol(A_{i, i})
         L_diagonal_blocks[i, :, :] = la.cholesky(
             L_diagonal_blocks[i, :, :]).conj().T
 
-        # Temporary storage of re-used triangular solving
-        L_inv_temp = la.solve_triangular(
-            L_diagonal_blocks[i, :, :],
-            np.eye(diag_blocksize),
-            lower=True,
-        ).conj().T
-
         for j in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
             # L_{i+j, i} = A_{i+j, i} @ L_{i, i}^{-T}
             L_lower_diagonal_blocks[
                 i, (j - 1)*diag_blocksize:j*diag_blocksize, :] = (
-                L_lower_diagonal_blocks[
-                    i, (j - 1)*diag_blocksize:j * diag_blocksize, :
-                ] @ L_inv_temp
+                    la.solve_triangular(
+                        L_diagonal_blocks[i, :, :],
+                        L_lower_diagonal_blocks[
+                            i, (j - 1)*diag_blocksize:j * diag_blocksize, :].conj().T,
+                        lower=True,
+                    ).conj().T
             )
 
-            for k in range(1, j+1):
+            for k in range(1, j):
                 # L_{i+j, i+k} = A_{i+j, i+k} - L_{i+j, i} @ L_{i+k, i}^{T}
-                if j != k:
+                L_lower_diagonal_blocks[
+                    i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :
+                ] -= (
                     L_lower_diagonal_blocks[
-                        i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :
-                    ] = (L_lower_diagonal_blocks[
-                        i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :]
-                        - L_lower_diagonal_blocks[
-                        i, (j - 1)*diag_blocksize:j*diag_blocksize, :]
-                        @ L_lower_diagonal_blocks[
+                        i, (j - 1) * diag_blocksize:j*diag_blocksize, :]
+                    @ L_lower_diagonal_blocks[
                         i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
-                    )
+                )
 
-                else:
-                    L_diagonal_blocks[i+k, :, :] = (
-                        L_diagonal_blocks[i+k, :, :]
-                        - L_lower_diagonal_blocks[
-                            i, (j - 1)*diag_blocksize:j*diag_blocksize, :
-                        ]
-                        @ L_lower_diagonal_blocks[
-                            i, (k - 1)*diag_blocksize:k*diag_blocksize, :
-                        ].conj().T
-                    )
+            L_diagonal_blocks[i+j, :, :] -= (
+                L_lower_diagonal_blocks[
+                    i, (j - 1) * diag_blocksize:j*diag_blocksize, :]
+                @ L_lower_diagonal_blocks[
+                    i, (j - 1)*diag_blocksize:j*diag_blocksize, :].conj().T
+            )
 
         # Part of the decomposition for the arrowhead structure
         # L_{ndb+1, i} = A_{ndb+1, i} @ L_{i, i}^{-T}
         L_arrow_bottom_blocks[i, :, :] = (
-            L_arrow_bottom_blocks[i, :, :] @ L_inv_temp)
+            la.solve_triangular(
+                L_diagonal_blocks[i, :, :],
+                L_arrow_bottom_blocks[i, :, :].conj().T,
+                lower=True,
+            ).conj().T
+        )
 
         for k in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
             # L_{ndb+1, i+k} = A_{ndb+1, i+k} - L_{ndb+1, i} @ L_{i+k, i}^{T}
-            L_arrow_bottom_blocks[i + k, :, :] = (
-                L_arrow_bottom_blocks[i + k, :, :]
-                - L_arrow_bottom_blocks[i, :, :]
+            L_arrow_bottom_blocks[i + k, :, :] -= (
+                L_arrow_bottom_blocks[i, :, :]
                 @ L_lower_diagonal_blocks[
                     i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
             )
 
         # L_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}^{T}
-        L_arrow_tip_block[:, :] = (
-            L_arrow_tip_block[:, :]
-            - L_arrow_bottom_blocks[i, :, :]
+        L_arrow_tip_block[:, :] -= (
+            L_arrow_bottom_blocks[i, :, :]
             @ L_arrow_bottom_blocks[i, :, :].conj().T
         )
 
     # L_{ndb, ndb} = chol(A_{ndb, ndb})
-    L_diagonal_blocks[-1, :,
-                      :] = la.cholesky(L_diagonal_blocks[-1, :, :]).conj().T
+    L_diagonal_blocks[-1, :,:] = la.cholesky(
+        L_diagonal_blocks[-1, :, :]).conj().T
 
     # L_{ndb+1, nbd} = A_{ndb+1, nbd} @ L_{ndb, ndb}^{-T}
     L_arrow_bottom_blocks[-1, :, :] = (
-        L_arrow_bottom_blocks[-1, :, :]
-        @ la.solve_triangular(
+        la.solve_triangular(
             L_diagonal_blocks[-1, :, :],
-            np.eye(diag_blocksize),
+            L_arrow_bottom_blocks[-1, :, :].conj().T,
             lower=True,
-        ).conj().T
+        )
+        .conj()
+        .T
     )
 
     # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, ndb} @ L_{ndb+1, ndb}^{T}
-    L_arrow_tip_block[:, :] = (
-        L_arrow_tip_block[:, :]
-        - L_arrow_bottom_blocks[-1, :, :]
+    L_arrow_tip_block[:, :] -= (
+        L_arrow_bottom_blocks[-1, :, :]
         @ L_arrow_bottom_blocks[-1, :, :].conj().T
     )
 
