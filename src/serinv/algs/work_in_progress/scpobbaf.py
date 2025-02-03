@@ -230,8 +230,8 @@ def scpobbaf_c(
 
     for i in range(n_diag_blocks-1):
         # L_{i, i} = chol(A_{i, i})
-        L_diagonal_blocks[i, :, :] = la.cholesky(
-            L_diagonal_blocks[i, :, :]).conj().T
+        L_diagonal_blocks[i, :, :] = np.linalg.cholesky(
+            L_diagonal_blocks[i, :, :])
 
         for j in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
             # L_{i+j, i} = A_{i+j, i} @ L_{i, i}^{-T}
@@ -245,23 +245,16 @@ def scpobbaf_c(
                     ).conj().T
             )
 
+            Liji = L_lower_diagonal_blocks[
+                i, (j - 1)*diag_blocksize:j*diag_blocksize, :]
             for k in range(1, j):
                 # L_{i+j, i+k} = A_{i+j, i+k} - L_{i+j, i} @ L_{i+k, i}^{T}
                 L_lower_diagonal_blocks[
                     i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :
-                ] -= (
-                    L_lower_diagonal_blocks[
-                        i, (j - 1) * diag_blocksize:j*diag_blocksize, :]
-                    @ L_lower_diagonal_blocks[
+                ] -= Liji @ L_lower_diagonal_blocks[
                         i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
-                )
 
-            L_diagonal_blocks[i+j, :, :] -= (
-                L_lower_diagonal_blocks[
-                    i, (j - 1) * diag_blocksize:j*diag_blocksize, :]
-                @ L_lower_diagonal_blocks[
-                    i, (j - 1)*diag_blocksize:j*diag_blocksize, :].conj().T
-            )
+            L_diagonal_blocks[i+j, :, :] -= Liji @ Liji.conj().T
 
         # Part of the decomposition for the arrowhead structure
         # L_{ndb+1, i} = A_{ndb+1, i} @ L_{i, i}^{-T}
@@ -288,8 +281,8 @@ def scpobbaf_c(
         )
 
     # L_{ndb, ndb} = chol(A_{ndb, ndb})
-    L_diagonal_blocks[-1, :,:] = la.cholesky(
-        L_diagonal_blocks[-1, :, :]).conj().T
+    L_diagonal_blocks[-1, :, :] = np.linalg.cholesky(
+        L_diagonal_blocks[-1, :, :])
 
     # L_{ndb+1, nbd} = A_{ndb+1, nbd} @ L_{ndb, ndb}^{-T}
     L_arrow_bottom_blocks[-1, :, :] = (
@@ -309,7 +302,7 @@ def scpobbaf_c(
     )
 
     # L_{ndb+1, ndb+1} = chol(A_{ndb+1, ndb+1})
-    L_arrow_tip_block[:, :] = la.cholesky(L_arrow_tip_block[:, :]).conj().T
+    L_arrow_tip_block[:, :] = np.linalg.cholesky(L_arrow_tip_block[:, :])
 
     return (L_diagonal_blocks, L_lower_diagonal_blocks,
             L_arrow_bottom_blocks, L_arrow_tip_block)
