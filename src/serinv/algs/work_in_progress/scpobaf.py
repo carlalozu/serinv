@@ -39,9 +39,8 @@ def scpobaf(
         - L_arrow_tip (ArrayLike): The tip of the arrow in the lower triangular
         matrix.
     """
+    n_diagonals = A_diagonal.shape[0]
     n_offdiags = A_lower_diagonals.shape[0]
-    matrix_size = A_diagonal.shape[0]
-    arrowhead_size = A_arrow_tip.shape[0]
 
     # Initialize result matrices
     if overwrite:
@@ -55,65 +54,48 @@ def scpobaf(
         L_arrow_bottom = np.copy(A_arrow_bottom)
         L_arrow_tip = np.copy(A_arrow_tip)
 
-    L_temp = np.zeros((n_offdiags+1, n_offdiags+1), dtype=A_diagonal.dtype)
-
+    L_i1i1 = np.zeros((n_offdiags, n_offdiags), dtype=L_diagonal.dtype)
     # Process banded part of the matrix
-    for col_idx in range(matrix_size):
-        # Define the starting index for the current column
-        start_idx = max(col_idx - n_offdiags, 0)
+    for i in range(n_diagonals-1):
 
-        # Extract previous elements needed for computation
-        prev_elements = np.copy(L_temp[0, max(n_offdiags-col_idx+1, 1):])
+        # L_{i, i} = chol(A_{i, i})
+        L_diagonal[i] = np.sqrt(L_diagonal[i])
 
-        # Compute diagonal element
-        L_diagonal[col_idx] = np.sqrt(
-            L_diagonal[col_idx] -
-            np.dot(prev_elements, prev_elements.conj())
+        # Update column i of the lower diagonals
+        L_lower_diagonals[:-1, i] -= np.matmul(
+            L_i1i1[0, :].conj(), L_i1i1[1:, :].T)
+
+        # L_{i+1, i} = A_{i+1, i} @ L_{i, i}^{-T}
+        L_lower_diagonals[:, i] /= L_diagonal[i].conj()
+        L_i1i1[:-1, :-1] = L_i1i1[1:, 1:]
+        L_i1i1[:, -1] = L_lower_diagonals[:, i]
+
+        # L_{ndb+1, i} = A_{ndb+1, i} @ L_{i, i}^{-T}
+        L_arrow_bottom[:, i] /= L_diagonal[i].conj()
+
+        # A_{ndb+1, i+1} = A_{ndb+1, i+1} - L_{ndb+1, i} @ L_{i+1, i}.conj().T
+        L_arrow_bottom[:, i+1] -= np.matmul(
+            L_arrow_bottom[:, max(0, i-n_offdiags+1):i+1],
+            L_i1i1[0, max(-n_offdiags, -i)-1:].conj().T
         )
 
-        # Compute arrow part
-        L_arrow_bottom[:, col_idx] = (
-            L_arrow_bottom[:, col_idx] -
-            np.matmul(prev_elements.conj(),
-                      L_arrow_bottom[:, start_idx:col_idx].T)
-        ) / L_diagonal[col_idx]
+        # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}.conj().T
+        L_arrow_tip[:, :] -= L_arrow_bottom[:,i:i+1] @ L_arrow_bottom[:, i:i+1].conj().T
 
-        if col_idx == matrix_size-1:
-            break
+        # Update next diagonal
+        # A_{i+1, i+1} = A_{i+1, i+1} - L_{i+1, i} @ L_{i+1, i}.conj().T
+        L_diagonal[i+1] -= L_i1i1[0, :] @ L_i1i1[0, :].conj().T
 
-        # Compute column elements within bandwidth
-        L_lower_diagonals[:, col_idx] = (
-            L_lower_diagonals[:, col_idx] -
-            np.matmul(
-                prev_elements.conj(),
-                L_temp[1:, max(n_offdiags-col_idx+1, 1):].T
-            )
-        ) / L_diagonal[col_idx]
+    # L_{ndb, ndb} = chol(A_{ndb, ndb})
+    L_diagonal[-1] = np.sqrt(L_diagonal[-1])
 
-        # Change this last because prev_elements is referencing L_temp
-        L_temp[:-1, :-1] = L_temp[1:, 1:]
-        L_temp[:-1, -1] = L_lower_diagonals[:, col_idx]
+    # L_{ndb+1, ndb} = A_{ndb+1, ndb} @ L_{ndb, ndb}^{-T}
+    L_arrow_bottom[:, -1] = L_arrow_bottom[:, -1] / L_diagonal[-1].conj()
 
-    L_arrow_dot = np.sum(L_arrow_bottom*L_arrow_bottom.conj(), axis=1)
-    L_arrow_matmul = np.matmul(L_arrow_bottom.conj(), L_arrow_bottom.T)
-    # Process arrow part
-    for arrow_idx in range(arrowhead_size):
-        # Compute diagonal elements of arrow part
-        L_arrow_tip[arrow_idx, arrow_idx] = np.sqrt(
-            L_arrow_tip[arrow_idx, arrow_idx] -
-            L_arrow_dot[arrow_idx] -
-            np.dot(L_arrow_tip[arrow_idx, :arrow_idx],
-                   L_arrow_tip[arrow_idx, :arrow_idx].conj())
-        )
+    # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, ndb} @ L_{ndb+1, ndb}^{T}
+    L_arrow_tip[:, :] -= L_arrow_bottom[:, -1:] @ L_arrow_bottom[:, -1:].conj().T
 
-        # Compute off-diagonal elements of arrow part
-        L_arrow_tip[arrow_idx + 1:, arrow_idx] = (
-            L_arrow_tip[arrow_idx + 1:, arrow_idx] -
-            L_arrow_matmul[arrow_idx, arrow_idx+1:] -
-            np.matmul(
-                L_arrow_tip[arrow_idx, :arrow_idx].conj(),
-                L_arrow_tip[arrow_idx+1:, :arrow_idx].T
-            )
-        ) / L_arrow_tip[arrow_idx, arrow_idx]
+    # L_{ndb+1, ndb+1} = chol(A_{ndb+1, ndb+1})
+    L_arrow_tip[:, :] = np.linalg.cholesky(L_arrow_tip[:, :])
 
     return L_diagonal, L_lower_diagonals, L_arrow_bottom, L_arrow_tip
