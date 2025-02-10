@@ -1,8 +1,25 @@
 # Copyright 2023-2024 ETH Zurich. All rights reserved.
 
+try:
+    import cupy as cp
+    import cupyx.scipy.linalg as cu_la
+
+    CUPY_AVAIL = True
+
+except ImportError:
+    CUPY_AVAIL = False
+
 import numpy as np
-import scipy.linalg as la
+import scipy.linalg as np_la
 from numpy.typing import ArrayLike
+
+
+if CUPY_AVAIL:
+    xp = cp 
+    la = cu_la
+else:
+    xp = np
+    la = np_la
 
 
 def scpobbasi(
@@ -237,10 +254,10 @@ def scpobbasi_c(
         X_arrow_bottom_blocks = L_arrow_bottom_blocks
         X_arrow_tip_block = L_arrow_tip_block
     else:
-        X_diagonal_blocks = np.copy(L_diagonal_blocks)
-        X_lower_diagonal_blocks = np.copy(L_lower_diagonal_blocks)
-        X_arrow_bottom_blocks = np.copy(L_arrow_bottom_blocks)
-        X_arrow_tip_block = np.copy(L_arrow_tip_block)
+        X_diagonal_blocks = xp.copy(L_diagonal_blocks)
+        X_lower_diagonal_blocks = xp.copy(L_lower_diagonal_blocks)
+        X_arrow_bottom_blocks = xp.copy(L_arrow_bottom_blocks)
+        X_arrow_tip_block = xp.copy(L_arrow_tip_block)
 
     n_diag_blocks, diag_blocksize, _ = X_diagonal_blocks.shape
     arrow_blocksize = X_arrow_tip_block.shape[0]
@@ -250,22 +267,22 @@ def scpobbasi_c(
 
     L_last_blk_inv = la.solve_triangular(
         X_arrow_tip_block[:, :],
-        np.eye(arrow_blocksize),
+        xp.eye(arrow_blocksize),
         lower=True
     )
     X_arrow_tip_block[:, :] = L_last_blk_inv.conj().T @ L_last_blk_inv
 
-    L_blk_inv = np.empty_like(L_diagonal_blocks[0, :, :])
-    L_lower_diagonal_blocks_i = np.empty_like(X_lower_diagonal_blocks[0, :, :])
-    L_arrow_bottom_blocks_i = np.empty_like(X_arrow_bottom_blocks[0, :, :])
+    L_blk_inv = xp.empty_like(L_diagonal_blocks[0, :, :])
+    L_lower_diagonal_blocks_i = xp.empty_like(X_lower_diagonal_blocks[0, :, :])
+    L_arrow_bottom_blocks_i = xp.empty_like(X_arrow_bottom_blocks[0, :, :])
 
     L_blk_inv[:, :] = la.solve_triangular(
         L_diagonal_blocks[-1, :, :],
-        np.eye(diag_blocksize),
+        xp.eye(diag_blocksize),
         lower=True,
     )
 
-    L_arrow_bottom_blocks_i[:, :] = np.copy(X_arrow_bottom_blocks[-1, :, :])
+    L_arrow_bottom_blocks_i[:, :] = xp.copy(X_arrow_bottom_blocks[-1, :, :])
 
     # X_{ndb+1, ndb} = -X_{ndb+1, ndb+1} L_{ndb+1, ndb} L_{ndb, ndb}^{-1}
     X_arrow_bottom_blocks[-1, :, :] = (
@@ -281,13 +298,13 @@ def scpobbasi_c(
     for i in range(n_diag_blocks - 2, -1, -1):
 
         # Temporary variables to save original L values
-        L_arrow_bottom_blocks_i[:, :] = np.copy(X_arrow_bottom_blocks[i, :])
-        L_lower_diagonal_blocks_i[:, :] = np.copy(X_lower_diagonal_blocks[i, :, :])
+        L_arrow_bottom_blocks_i[:, :] = xp.copy(X_arrow_bottom_blocks[i, :])
+        L_lower_diagonal_blocks_i[:, :] = xp.copy(X_lower_diagonal_blocks[i, :, :])
 
         # L_blk_inv = L_{i, i}^{-1}
         L_blk_inv[:, :] = la.solve_triangular(
             X_diagonal_blocks[i, :, :],
-            np.eye(diag_blocksize),
+            xp.eye(diag_blocksize),
             lower=True,
         )
 

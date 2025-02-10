@@ -1,5 +1,22 @@
+try:
+    import cupy as cp
+    from serinv.cupyfix.cholesky_lowerfill import cholesky_lowerfill
+
+    CUPY_AVAIL = True
+
+except ImportError:
+    CUPY_AVAIL = False
+
 import numpy as np
 from numpy.typing import ArrayLike
+
+
+if CUPY_AVAIL:
+    xp = cp
+    cholesky = cholesky_lowerfill
+else:
+    xp = np
+    cholesky = np.linalg.cholesky
 
 
 def scpobaf(
@@ -49,21 +66,20 @@ def scpobaf(
         L_arrow_bottom = A_arrow_bottom
         L_arrow_tip = A_arrow_tip
     else:
-        L_diagonal = np.copy(A_diagonal)
-        L_lower_diagonals = np.copy(A_lower_diagonals)
-        L_arrow_bottom = np.copy(A_arrow_bottom)
-        L_arrow_tip = np.copy(A_arrow_tip)
+        L_diagonal = xp.copy(A_diagonal)
+        L_lower_diagonals = xp.copy(A_lower_diagonals)
+        L_arrow_bottom = xp.copy(A_arrow_bottom)
+        L_arrow_tip = xp.copy(A_arrow_tip)
 
-    L_i1i1 = np.zeros((n_offdiags, n_offdiags), dtype=L_diagonal.dtype)
+    L_i1i1 = xp.zeros((n_offdiags, n_offdiags), dtype=L_diagonal.dtype)
     # Process banded part of the matrix
     for i in range(n_diagonals-1):
 
         # L_{i, i} = chol(A_{i, i})
-        L_diagonal[i] = np.sqrt(L_diagonal[i])
+        L_diagonal[i] = xp.sqrt(L_diagonal[i])
 
         # Update column i of the lower diagonals
-        L_lower_diagonals[:-1, i] -= np.matmul(
-            L_i1i1[0, :].conj(), L_i1i1[1:, :].T)
+        L_lower_diagonals[:-1, i] -= L_i1i1[0, :].conj() @ L_i1i1[1:, :].T
 
         # L_{i+1, i} = A_{i+1, i} @ L_{i, i}^{-T}
         L_lower_diagonals[:, i] /= L_diagonal[i].conj()
@@ -74,28 +90,28 @@ def scpobaf(
         L_arrow_bottom[:, i] /= L_diagonal[i].conj()
 
         # A_{ndb+1, i+1} = A_{ndb+1, i+1} - L_{ndb+1, i} @ L_{i+1, i}.conj().T
-        L_arrow_bottom[:, i+1] -= np.matmul(
-            L_arrow_bottom[:, max(0, i-n_offdiags+1):i+1],
+        L_arrow_bottom[:, i+1] -= L_arrow_bottom[:, max(0, i-n_offdiags+1):i+1] @ \
             L_i1i1[0, max(-n_offdiags, -i)-1:].conj().T
-        )
 
         # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}.conj().T
-        L_arrow_tip[:, :] -= L_arrow_bottom[:,i:i+1] @ L_arrow_bottom[:, i:i+1].conj().T
+        L_arrow_tip[:, :] -= L_arrow_bottom[:, i:i + 1] @ \
+            L_arrow_bottom[:, i:i+1].conj().T
 
         # Update next diagonal
         # A_{i+1, i+1} = A_{i+1, i+1} - L_{i+1, i} @ L_{i+1, i}.conj().T
         L_diagonal[i+1] -= L_i1i1[0, :] @ L_i1i1[0, :].conj().T
 
     # L_{ndb, ndb} = chol(A_{ndb, ndb})
-    L_diagonal[-1] = np.sqrt(L_diagonal[-1])
+    L_diagonal[-1] = xp.sqrt(L_diagonal[-1])
 
     # L_{ndb+1, ndb} = A_{ndb+1, ndb} @ L_{ndb, ndb}^{-T}
     L_arrow_bottom[:, -1] = L_arrow_bottom[:, -1] / L_diagonal[-1].conj()
 
     # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, ndb} @ L_{ndb+1, ndb}^{T}
-    L_arrow_tip[:, :] -= L_arrow_bottom[:, -1:] @ L_arrow_bottom[:, -1:].conj().T
+    L_arrow_tip[:, :] -= L_arrow_bottom[:, -1:] @ \
+        L_arrow_bottom[:, -1:].conj().T
 
     # L_{ndb+1, ndb+1} = chol(A_{ndb+1, ndb+1})
-    L_arrow_tip[:, :] = np.linalg.cholesky(L_arrow_tip[:, :])
+    L_arrow_tip[:, :] = cholesky(L_arrow_tip[:, :])
 
     return L_diagonal, L_lower_diagonals, L_arrow_bottom, L_arrow_tip

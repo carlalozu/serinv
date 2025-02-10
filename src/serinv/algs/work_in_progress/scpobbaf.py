@@ -2,8 +2,27 @@
 
 from typing import Tuple
 import numpy as np
-import scipy.linalg as la
+import scipy.linalg as np_la
 from numpy.typing import ArrayLike
+
+try:
+    import cupy as cp
+    import cupyx.scipy.linalg as cu_la
+    from serinv.cupyfix.cholesky_lowerfill import cholesky_lowerfill
+
+    CUPY_AVAIL = True
+
+except ImportError:
+    CUPY_AVAIL = False
+
+if CUPY_AVAIL:
+    xp = cp
+    la = cu_la
+    cholesky = cholesky_lowerfill
+else:
+    xp = np
+    la = np_la
+    cholesky = np.linalg.cholesky
 
 
 def scpobbaf(
@@ -12,7 +31,7 @@ def scpobbaf(
     diag_blocksize: int,
     arrow_blocksize: int,
     overwrite: bool = False,
-) -> np.ndarray:
+) -> ArrayLike:
     """Perform the cholesky factorization of a block n-diagonals arrowhead
     matrix. The matrix is assumed to be symmetric positive definite.
 
@@ -219,10 +238,10 @@ def scpobbaf_c(
         L_arrow_bottom_blocks = A_arrow_bottom_blocks
         L_arrow_tip_block = A_arrow_tip_block
     else:
-        L_diagonal_blocks = np.copy(A_diagonal_blocks)
-        L_lower_diagonal_blocks = np.copy(A_lower_diagonal_blocks)
-        L_arrow_bottom_blocks = np.copy(A_arrow_bottom_blocks)
-        L_arrow_tip_block = np.copy(A_arrow_tip_block)
+        L_diagonal_blocks = xp.copy(A_diagonal_blocks)
+        L_lower_diagonal_blocks = xp.copy(A_lower_diagonal_blocks)
+        L_arrow_bottom_blocks = xp.copy(A_arrow_bottom_blocks)
+        L_arrow_tip_block = xp.copy(A_arrow_tip_block)
 
     n_diag_blocks, diag_blocksize, _ = L_diagonal_blocks.shape
     # Number of lower diagonals, total bandwidth is n_offdiags_blk*2+1
@@ -230,7 +249,7 @@ def scpobbaf_c(
 
     for i in range(n_diag_blocks-1):
         # L_{i, i} = chol(A_{i, i})
-        L_diagonal_blocks[i, :, :] = np.linalg.cholesky(
+        L_diagonal_blocks[i, :, :] = cholesky(
             L_diagonal_blocks[i, :, :])
 
         for j in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
@@ -245,6 +264,7 @@ def scpobbaf_c(
                     ).conj().T
             )
 
+            # Update next blocks in row j
             Liji = L_lower_diagonal_blocks[
                 i, (j - 1)*diag_blocksize:j*diag_blocksize, :]
             for k in range(1, j):
@@ -254,6 +274,8 @@ def scpobbaf_c(
                 ] -= Liji @ L_lower_diagonal_blocks[
                         i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
 
+            # Update next diagonal block
+            # A_{i+1, i+1} = A_{i+1, i+1} - L_{i+1, i} @ L_{i+1, i}.conj().T
             L_diagonal_blocks[i+j, :, :] -= Liji @ Liji.conj().T
 
         # Part of the decomposition for the arrowhead structure
@@ -281,7 +303,7 @@ def scpobbaf_c(
         )
 
     # L_{ndb, ndb} = chol(A_{ndb, ndb})
-    L_diagonal_blocks[-1, :, :] = np.linalg.cholesky(
+    L_diagonal_blocks[-1, :, :] = cholesky(
         L_diagonal_blocks[-1, :, :])
 
     # L_{ndb+1, nbd} = A_{ndb+1, nbd} @ L_{ndb, ndb}^{-T}
@@ -302,7 +324,7 @@ def scpobbaf_c(
     )
 
     # L_{ndb+1, ndb+1} = chol(A_{ndb+1, ndb+1})
-    L_arrow_tip_block[:, :] = np.linalg.cholesky(L_arrow_tip_block[:, :])
+    L_arrow_tip_block[:, :] = cholesky(L_arrow_tip_block[:, :])
 
     return (L_diagonal_blocks, L_lower_diagonal_blocks,
             L_arrow_bottom_blocks, L_arrow_tip_block)
