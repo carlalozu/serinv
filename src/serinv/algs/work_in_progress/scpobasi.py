@@ -1,6 +1,23 @@
+try:
+    import cupy as cp
+    import cupyx.scipy.linalg as cu_la
+
+    CUPY_AVAIL = True
+
+except ImportError:
+    CUPY_AVAIL = False
+
 import numpy as np
-import scipy.linalg as la
+import scipy.linalg as np_la
 from numpy.typing import ArrayLike
+
+
+if CUPY_AVAIL:
+    xp = cp 
+    la = cu_la
+else:
+    xp = np
+    la = np_la
 
 
 def scpobasi(
@@ -49,18 +66,18 @@ def scpobasi(
         X_arrow_bottom = L_arrow_bottom
         X_arrow_tip = L_arrow_tip
     else:
-        X_diagonal = np.copy(L_diagonal)
-        X_lower_diagonals = np.copy(L_lower_diagonals)
-        X_arrow_bottom = np.copy(L_arrow_bottom)
-        X_arrow_tip = np.copy(L_arrow_tip)
+        X_diagonal = xp.copy(L_diagonal)
+        X_lower_diagonals = xp.copy(L_lower_diagonals)
+        X_arrow_bottom = xp.copy(L_arrow_bottom)
+        X_arrow_tip = xp.copy(L_arrow_tip)
 
     # Arrowhead inversion first
     inv_L_Dndb1 = la.solve_triangular(
         # L_{ndb+1, ndb+1}^{-1}
-        L_arrow_tip[:, :], np.eye(arrowhead_size), lower=True)
+        L_arrow_tip[:, :], xp.eye(arrowhead_size), lower=True)
 
     inv_L_Dndb = 1/X_diagonal[-1]  # # L_{ndb, ndb}^{-1}
-    L_Fndb = np.copy(X_arrow_bottom[:, -1])  # L_{ndb+1, ndb}
+    L_Fndb = xp.copy(X_arrow_bottom[:, -1])  # L_{ndb+1, ndb}
 
     # X_{ndb+1, ndb+1}
     X_arrow_tip[:, :] = inv_L_Dndb1.conj().T @ inv_L_Dndb1
@@ -71,7 +88,7 @@ def scpobasi(
     X_diagonal[-1] = inv_L_Dndb*inv_L_Dndb.conj() - \
         L_Fndb.conj().T @ X_arrow_bottom[:, -1] * inv_L_Dndb
 
-    X_i1i1 = np.zeros((n_offdiags, n_offdiags), dtype=L_diagonal.dtype)
+    X_i1i1 = xp.zeros((n_offdiags, n_offdiags), dtype=L_diagonal.dtype)
     X_i1i1[0, 0] = X_diagonal[-1]
 
     # Rest of the matrix
@@ -83,9 +100,9 @@ def scpobasi(
         # Inverse of the L diagonal value i, L_{i, i}^{-1}
         iL_Di = 1/X_diagonal[matrix_size-i]
         # L arrow bottom slice i, L_{ndb+1, i}
-        L_Fi = np.copy(X_arrow_bottom[:, matrix_size-i])
+        L_Fi = xp.copy(X_arrow_bottom[:, matrix_size-i])
         # L lower diagonal slice, L_{i+1, i}
-        L_Ei = np.copy(X_lower_diagonals[:tail, matrix_size-i])
+        L_Ei = xp.copy(X_lower_diagonals[:tail, matrix_size-i])
 
         # X arrow bottom slice i+i, X_{ndb+1, i+1}
         X_ndb1_i1 = X_arrow_bottom[:, matrix_size-i+1:matrix_size-i+1+tail]
