@@ -252,31 +252,34 @@ def scpobbaf_c(
         L_diagonal_blocks[i, :, :] = cholesky(
             L_diagonal_blocks[i, :, :])
 
-        for j in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
-            # L_{i+j, i} = A_{i+j, i} @ L_{i, i}^{-T}
-            L_lower_diagonal_blocks[
-                i, (j - 1)*diag_blocksize:j*diag_blocksize, :] = (
-                    la.solve_triangular(
-                        L_diagonal_blocks[i, :, :],
-                        L_lower_diagonal_blocks[
-                            i, (j - 1)*diag_blocksize:j * diag_blocksize, :].conj().T,
-                        lower=True,
-                    ).conj().T
-            )
+        j_ = min(n_offdiags_blk, n_diag_blocks - i - 1)
+        # L_{i+j, i} = A_{i+j, i} @ L_{i, i}^{-T}
+        L_lower_diagonal_blocks[i, :j_*diag_blocksize, :] = (
+            la.solve_triangular(
+                L_diagonal_blocks[i, :, :],
+                L_lower_diagonal_blocks[i, :j_*diag_blocksize, :].conj().T,
+                lower=True,
+            ).conj().T
+        )
 
-            # Update next blocks in row j
-            Liji = L_lower_diagonal_blocks[
-                i, (j - 1)*diag_blocksize:j*diag_blocksize, :]
-            for k in range(1, j):
+        # Update next blocks in row j
+        for k in range(1, min(n_offdiags_blk, n_diag_blocks - i - 1)):
+            for j in range(k+1, min(n_offdiags_blk, n_diag_blocks - i - 1)+1):
                 # L_{i+j, i+k} = A_{i+j, i+k} - L_{i+j, i} @ L_{i+k, i}^{T}
                 L_lower_diagonal_blocks[
-                    i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :
-                ] -= Liji @ L_lower_diagonal_blocks[
-                        i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
+                    i + k, (j - k - 1)*diag_blocksize:(j - k)*diag_blocksize, :
+                ] -= L_lower_diagonal_blocks[
+                    i, (j - 1)*diag_blocksize:j*diag_blocksize, :] @\
+                    L_lower_diagonal_blocks[
+                    i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
 
-            # Update next diagonal block
-            # A_{i+1, i+1} = A_{i+1, i+1} - L_{i+1, i} @ L_{i+1, i}.conj().T
-            L_diagonal_blocks[i+j, :, :] -= Liji @ Liji.conj().T
+        # A_{i+j, i+j} = A_{i+j, i+j} - L_{i+j, i} @ L_{i+j, i}.conj().T
+        column = L_lower_diagonal_blocks[i, :j_*diag_blocksize, :]
+        L_diagonal_blocks[i+1:i+j_+1, :, :] -= xp.einsum(
+            'jab, jcb -> jac',
+            column.reshape(j_, diag_blocksize, diag_blocksize),
+            column.reshape(j_, diag_blocksize, diag_blocksize).conj()
+        )
 
         # Part of the decomposition for the arrowhead structure
         # L_{ndb+1, i} = A_{ndb+1, i} @ L_{i, i}^{-T}
@@ -288,13 +291,12 @@ def scpobbaf_c(
             ).conj().T
         )
 
-        for k in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
-            # L_{ndb+1, i+k} = A_{ndb+1, i+k} - L_{ndb+1, i} @ L_{i+k, i}^{T}
-            L_arrow_bottom_blocks[i + k, :, :] -= (
-                L_arrow_bottom_blocks[i, :, :]
-                @ L_lower_diagonal_blocks[
-                    i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
-            )
+        # L_{ndb+1, i+k} = A_{ndb+1, i+k} - L_{ndb+1, i} @ L_{i+k, i}^{T}
+        L_arrow_bottom_blocks[i+1:i+j_+1, :, :] -= xp.einsum(
+            'ad, bfd -> baf',
+            L_arrow_bottom_blocks[i, :, :],
+            column.reshape(j_, diag_blocksize, diag_blocksize).conj()
+        )
 
         # L_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}^{T}
         L_arrow_tip_block[:, :] -= (
