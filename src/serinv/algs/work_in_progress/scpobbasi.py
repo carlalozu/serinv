@@ -313,7 +313,6 @@ def scpobbasi_c(
         X_arrow_bottom_blocks[i, :] = (
             -X_arrow_tip_block[:, :] @ X_arrow_bottom_blocks[i, :]
         )
-
         for k in range(i + 1, min(i + n_offdiags_blk + 1, n_diag_blocks), 1):
             # X_{ndb+1, i} = X_{ndb+1, i} - X_{ndb+1, k} L_{k, i}
             X_arrow_bottom_blocks[i, :] -= (
@@ -321,7 +320,6 @@ def scpobbasi_c(
                 X_lower_diagonal_blocks[
                     i, (k - i - 1) * diag_blocksize: (k - i) * diag_blocksize, :]
             )
-
         # X_{ndb+1, i} = X_{ndb+1, i} L_{i, i}^{-1}
         X_arrow_bottom_blocks[i, :] @= L_blk_inv
 
@@ -333,9 +331,8 @@ def scpobbasi_c(
                 i, (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
             ] = -X_arrow_bottom_blocks[j, :].conj().T @ L_arrow_bottom_blocks_i
 
-
             for k in range(i + 1, j):
-                # X_{j, i} = X_{j, i} - X_{k, j} @ L_{k, i}, k<j
+                # X_{j, i} = X_{j, i} - X_{j, k} @ L_{k, i}, k<j
                 X_lower_diagonal_blocks[
                     i, (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
                 ] -= (
@@ -344,8 +341,7 @@ def scpobbasi_c(
                     ] @ L_lower_diagonal_blocks_i[
                         (k - i - 1) * diag_blocksize: (k - i) * diag_blocksize, :]
                 )
-
-            # X_{j, i} = X_{j, i} - X_{j, j}.T @ L_{j, i}, k=j
+            # X_{j, i} = X_{j, i} - X_{j, j} @ L_{j, i}, k=j
             X_lower_diagonal_blocks[
                 i, (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
             ] -= (
@@ -353,9 +349,8 @@ def scpobbasi_c(
                     (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
                 ]
             )
-
             for k in range(j+1, min(i + n_offdiags_blk + 1, n_diag_blocks)):
-                # X_{j, i} = X_{j, i} - X_{j, k}.T @ L_{k, i}, k>j
+                # X_{j, i} = X_{j, i} - X_{k, j}.T @ L_{k, i}, k>j
                 X_lower_diagonal_blocks[
                     i, (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
                 ] -= (
@@ -365,7 +360,6 @@ def scpobbasi_c(
                         (k - i - 1) * diag_blocksize: (k - i) * diag_blocksize, :
                     ]
                 )
-
             # X_{j, i} = X_{j, i} L_{i, i}^{-1}
             X_lower_diagonal_blocks[
                 i, (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
@@ -377,7 +371,6 @@ def scpobbasi_c(
             L_blk_inv.conj().T - X_arrow_bottom_blocks[
                 i, :].conj().T @ L_arrow_bottom_blocks_i
         )
-
         for k in range(i + 1, min(i + n_offdiags_blk + 1, n_diag_blocks), 1):
             # X_{i, i} = X_{i, i} - X_{k, i}.T L_{k, i}
             X_diagonal_blocks[i, :, :] -= (
@@ -388,7 +381,6 @@ def scpobbasi_c(
                     (k - i - 1) * diag_blocksize: (k - i) * diag_blocksize, :
                 ]
             )
-
         # X_{i, i} = X_{i, i} L_{i, i}^{-1}
         X_diagonal_blocks[i, :, :] @= L_blk_inv
 

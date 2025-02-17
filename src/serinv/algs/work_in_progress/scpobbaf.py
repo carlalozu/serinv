@@ -275,7 +275,7 @@ def scpobbaf_c(
                         i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
 
             # Update next diagonal block
-            # A_{i+1, i+1} = A_{i+1, i+1} - L_{i+1, i} @ L_{i+1, i}.conj().T
+            # A_{i+j, i+j} = A_{i+j, i+j} - L_{i+j, i} @ L_{i+j, i}.conj().T
             L_diagonal_blocks[i+j, :, :] -= Liji @ Liji.conj().T
 
         # Part of the decomposition for the arrowhead structure
