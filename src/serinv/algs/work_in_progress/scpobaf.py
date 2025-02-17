@@ -79,27 +79,26 @@ def scpobaf(
         L_diagonal[i] = xp.sqrt(L_diagonal[i])
 
         # Update column i of the lower diagonals
-        L_lower_diagonals[:-1, i] -= L_i1i1[0, :].conj() @ L_i1i1[1:, :].T
+        L_lower_diagonals[:-1, i] -= L_i1i1[:, 0].conj().T @ L_i1i1[:, 1:]
 
         # L_{i+1, i} = A_{i+1, i} @ L_{i, i}^{-T}
         L_lower_diagonals[:, i] /= L_diagonal[i].conj()
         L_i1i1[:-1, :-1] = L_i1i1[1:, 1:]
-        L_i1i1[:, -1] = L_lower_diagonals[:, i]
+        L_i1i1[-1, :] = L_lower_diagonals[:, i]
 
         # L_{ndb+1, i} = A_{ndb+1, i} @ L_{i, i}^{-T}
         L_arrow_bottom[:, i] /= L_diagonal[i].conj()
 
         # A_{ndb+1, i+1} = A_{ndb+1, i+1} - L_{ndb+1, i} @ L_{i+1, i}.conj().T
         L_arrow_bottom[:, i+1] -= L_arrow_bottom[:, max(0, i-n_offdiags+1):i+1] @ \
-            L_i1i1[0, max(-n_offdiags, -i)-1:].conj().T
+            L_i1i1[max(-n_offdiags, -i)-1:, 0].conj().T
 
         # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}.conj().T
-        L_arrow_tip[:, :] -= L_arrow_bottom[:, i:i + 1] @ \
-            L_arrow_bottom[:, i:i+1].conj().T
+        L_arrow_tip[:, :] -= L_arrow_bottom[:, i:i+1] @ L_arrow_bottom[:, i:i+1].conj().T
 
         # Update next diagonal
         # A_{i+1, i+1} = A_{i+1, i+1} - L_{i+1, i} @ L_{i+1, i}.conj().T
-        L_diagonal[i+1] -= L_i1i1[0, :] @ L_i1i1[0, :].conj().T
+        L_diagonal[i+1] -= L_i1i1[:, 0] @ L_i1i1[:, 0].conj().T
 
     # L_{ndb, ndb} = chol(A_{ndb, ndb})
     L_diagonal[-1] = xp.sqrt(L_diagonal[-1])
