@@ -246,11 +246,25 @@ def scpobbaf_c(
     n_diag_blocks, diag_blocksize, _ = L_diagonal_blocks.shape
     # Number of lower diagonals, total bandwidth is n_offdiags_blk*2+1
     n_offdiags_blk = L_lower_diagonal_blocks.shape[1]//diag_blocksize
+    arrow_blocksize = L_arrow_bottom_blocks.shape[1]
+    print(arrow_blocksize)
 
+    FLOPS = 0
+    counts = {
+        'cholesky_ns': 0,
+        'cholesky_nb': 0,
+        'triangular_solve_ns3': 0,
+        'triangular_solve_ns2nb': 0,
+        'DGEMM_ns3': 0,
+        'DGEMM_ns2nb': 0,
+        'DGEMM_nsnb2': 0
+    }
     for i in range(n_diag_blocks-1):
         # L_{i, i} = chol(A_{i, i})
         L_diagonal_blocks[i, :, :] = cholesky(
             L_diagonal_blocks[i, :, :])
+        FLOPS += diag_blocksize**3/3 + diag_blocksize**2/2 + diag_blocksize/6 # cholesky ns
+        counts['cholesky_ns'] += 1
 
         for j in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
             # L_{i+j, i} = A_{i+j, i} @ L_{i, i}^{-T}
@@ -263,6 +277,8 @@ def scpobbaf_c(
                         lower=True,
                     ).conj().T
             )
+            FLOPS += diag_blocksize**3  # triangular solve ns3
+            counts['triangular_solve_ns3'] += 1
 
             # Update next blocks in row j
             Liji = L_lower_diagonal_blocks[
@@ -273,10 +289,14 @@ def scpobbaf_c(
                     i + k, (j - k - 1)*diag_blocksize:(j-k)*diag_blocksize, :
                 ] -= Liji @ L_lower_diagonal_blocks[
                         i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
+                FLOPS += 2*diag_blocksize**3  # DGEMM ns3
+                counts['DGEMM_ns3'] += 1
 
             # Update next diagonal block
             # A_{i+j, i+j} = A_{i+j, i+j} - L_{i+j, i} @ L_{i+j, i}.conj().T
             L_diagonal_blocks[i+j, :, :] -= Liji @ Liji.conj().T
+            FLOPS += 2*diag_blocksize**3  # DGEMM ns3
+            counts['DGEMM_ns3'] += 1
 
         # Part of the decomposition for the arrowhead structure
         # L_{ndb+1, i} = A_{ndb+1, i} @ L_{i, i}^{-T}
@@ -287,6 +307,8 @@ def scpobbaf_c(
                 lower=True,
             ).conj().T
         )
+        FLOPS += diag_blocksize**2*arrow_blocksize # triangular solve ns2nb
+        counts['triangular_solve_ns2nb'] += 1
 
         for k in range(1, min(n_offdiags_blk + 1, n_diag_blocks - i)):
             # L_{ndb+1, i+k} = A_{ndb+1, i+k} - L_{ndb+1, i} @ L_{i+k, i}^{T}
@@ -295,16 +317,22 @@ def scpobbaf_c(
                 @ L_lower_diagonal_blocks[
                     i, (k - 1)*diag_blocksize:k*diag_blocksize, :].conj().T
             )
+            FLOPS += 2*diag_blocksize**2*arrow_blocksize  # DGEMM ns2nb
+            counts['DGEMM_ns2nb'] += 1
 
         # L_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}^{T}
         L_arrow_tip_block[:, :] -= (
             L_arrow_bottom_blocks[i, :, :]
             @ L_arrow_bottom_blocks[i, :, :].conj().T
         )
+        FLOPS += 2*diag_blocksize*arrow_blocksize**2 # DGEMM nsnb2
+        counts['DGEMM_nsnb2'] += 1
 
     # L_{ndb, ndb} = chol(A_{ndb, ndb})
     L_diagonal_blocks[-1, :, :] = cholesky(
         L_diagonal_blocks[-1, :, :])
+    FLOPS += diag_blocksize**3/3 + diag_blocksize**2/2 + diag_blocksize/6 # cholesky ns
+    counts['cholesky_ns'] += 1
 
     # L_{ndb+1, nbd} = A_{ndb+1, nbd} @ L_{ndb, ndb}^{-T}
     L_arrow_bottom_blocks[-1, :, :] = (
@@ -316,15 +344,24 @@ def scpobbaf_c(
         .conj()
         .T
     )
+    FLOPS += diag_blocksize**2*arrow_blocksize # triangular solve ns2nb
+    counts['triangular_solve_ns2nb'] += 1
 
     # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, ndb} @ L_{ndb+1, ndb}^{T}
     L_arrow_tip_block[:, :] -= (
         L_arrow_bottom_blocks[-1, :, :]
         @ L_arrow_bottom_blocks[-1, :, :].conj().T
     )
+    FLOPS += 2*diag_blocksize*arrow_blocksize**2 # DGEMM nsnb2
+    counts['DGEMM_nsnb2'] += 1
 
     # L_{ndb+1, ndb+1} = chol(A_{ndb+1, ndb+1})
     L_arrow_tip_block[:, :] = cholesky(L_arrow_tip_block[:, :])
+    FLOPS += arrow_blocksize**3/3 + arrow_blocksize**2/2 + arrow_blocksize/6 # cholesky nb
+    counts['cholesky_nb'] += 1
+
+    print(f"SCPOBBAF FLOPS: {FLOPS}")
+    print(counts)
 
     return (L_diagonal_blocks, L_lower_diagonal_blocks,
             L_arrow_bottom_blocks, L_arrow_tip_block)

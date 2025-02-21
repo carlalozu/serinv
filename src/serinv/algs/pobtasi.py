@@ -118,11 +118,25 @@ def _pobtasi(
 
     L_blk_inv = xp.empty_like(L_diagonal_blocks[0, :, :])
 
+    FLOPS = 0
+    counts = {
+        'triangular_solve_ns3': 0,
+        'triangular_solve_nb3': 0,
+        'DGEMM_ns3': 0,
+        'DGEMM_ns2nb': 0,
+        'DGEMM_nsnb2': 0,
+        'DGEMM_nb3': 0
+    }
+
     L_last_blk_inv = la.solve_triangular(
         L_arrow_tip_block[:, :], xp.eye(arrow_blocksize), lower=True
     )
+    FLOPS += arrow_blocksize ** 3
+    counts['triangular_solve_nb3'] += 1
 
     X_arrow_tip_block[:, :] = L_last_blk_inv.conj().T @ L_last_blk_inv
+    counts['DGEMM_nb3'] += 1
+    FLOPS += 2 * arrow_blocksize ** 3
 
     # Backward block-selected inversion
     L_arrow_bottom_blocks_i[:, :] = L_arrow_bottom_blocks[-1, :, :]
@@ -132,17 +146,28 @@ def _pobtasi(
         xp.eye(diag_blocksize),
         lower=True,
     )
+    FLOPS += diag_blocksize ** 3
+    counts['triangular_solve_ns3'] += 1
 
     # X_{ndb+1, ndb} = -X_{ndb+1, ndb+1} L_{ndb+1, ndb} L_{ndb, ndb}^{-1}
     X_arrow_bottom_blocks[-1, :, :] = (
         -X_arrow_tip_block[:, :] @ L_arrow_bottom_blocks_i[:, :] @ L_blk_inv
     )
+    counts['DGEMM_nsnb2'] += 1
+    FLOPS += 2 * arrow_blocksize ** 2 * diag_blocksize
+    counts['DGEMM_ns2nb'] += 1
+    FLOPS += 2 * arrow_blocksize * diag_blocksize**2
 
     # X_{ndb, ndb} = (L_{ndb, ndb}^{-T} - X_{ndb+1, ndb}^{T} L_{ndb+1, ndb}) L_{ndb, ndb}^{-1}
     X_diagonal_blocks[-1, :, :] = (
         L_blk_inv.conj().T
-        - X_arrow_bottom_blocks[-1, :, :].conj().T @ L_arrow_bottom_blocks_i[:, :]
+        - X_arrow_bottom_blocks[-1, :,
+                                :].conj().T @ L_arrow_bottom_blocks_i[:, :]
     ) @ L_blk_inv
+    counts['DGEMM_ns2nb'] += 1
+    FLOPS += 2 * arrow_blocksize * diag_blocksize**2
+    counts['DGEMM_ns3'] += 1
+    FLOPS += 2 * diag_blocksize**3
 
     n_diag_blocks = L_diagonal_blocks.shape[0]
     for i in range(n_diag_blocks - 2, -1, -1):
@@ -154,6 +179,8 @@ def _pobtasi(
             xp.eye(diag_blocksize),
             lower=True,
         )
+        FLOPS += diag_blocksize ** 3
+        counts['triangular_solve_ns3'] += 1
 
         # --- Off-diagonal block part ---
         # X_{i+1, i} = (-X_{i+1, i+1} L_{i+1, i} - X_{ndb+1, i+1}^{T} L_{ndb+1, i}) L_{i, i}^{-1}
@@ -162,13 +189,22 @@ def _pobtasi(
             - X_arrow_bottom_blocks[i + 1, :, :].conj().T
             @ L_arrow_bottom_blocks_i[:, :]
         ) @ L_blk_inv
+        counts['DGEMM_ns3'] += 2
+        FLOPS += 2*diag_blocksize**3*2
+        counts['DGEMM_ns2nb'] += 1
+        FLOPS += 2 * diag_blocksize**2 * arrow_blocksize
 
         # --- Arrowhead part ---
         # X_{ndb+1, i} = (- X_{ndb+1, i+1} L_{i+1, i} - X_{ndb+1, ndb+1} L_{ndb+1, i}) L_{i, i}^{-1}
         X_arrow_bottom_blocks[i, :, :] = (
-            -X_arrow_bottom_blocks[i + 1, :, :] @ L_lower_diagonal_blocks_i[:, :]
+            -X_arrow_bottom_blocks[i + 1, :,
+                                   :] @ L_lower_diagonal_blocks_i[:, :]
             - X_arrow_tip_block[:, :] @ L_arrow_bottom_blocks_i[:, :]
         ) @ L_blk_inv
+        counts['DGEMM_ns2nb'] += 2
+        FLOPS += 2 * arrow_blocksize * diag_blocksize**2*2
+        counts['DGEMM_nsnb2'] += 1
+        FLOPS += 2 * arrow_blocksize ** 2 * diag_blocksize
 
         # --- Diagonal block part ---
         # X_{i, i} = (L_{i, i}^{-T} - X_{i+1, i}^{T} L_{i+1, i} - X_{ndb+1, i}.conj().T L_{ndb+1, i}) L_{i, i}^{-1}
@@ -176,8 +212,16 @@ def _pobtasi(
             L_blk_inv.conj().T
             - X_lower_diagonal_blocks[i, :, :].conj().T
             @ L_lower_diagonal_blocks_i[:, :]
-            - X_arrow_bottom_blocks[i, :, :].conj().T @ L_arrow_bottom_blocks_i[:, :]
+            - X_arrow_bottom_blocks[i, :,
+                                    :].conj().T @ L_arrow_bottom_blocks_i[:, :]
         ) @ L_blk_inv
+        counts['DGEMM_ns3'] += 2
+        FLOPS += 2*diag_blocksize**3*2
+        counts['DGEMM_ns2nb'] += 1
+        FLOPS += 2 * diag_blocksize**2 * arrow_blocksize
+
+    print(FLOPS)
+    print(counts)
 
     return (
         X_diagonal_blocks,
@@ -247,8 +291,10 @@ def _streaming_pobtasi(
 
     # Backward block-selected inversion
     # --- C: events + transfers---
-    compute_diagonal_h2d_events[(n_diag_blocks - 2) % 2].record(stream=compute_stream)
-    compute_arrow_h2d_events[(n_diag_blocks - 2) % 2].record(stream=compute_stream)
+    compute_diagonal_h2d_events[(n_diag_blocks - 2) %
+                                2].record(stream=compute_stream)
+    compute_arrow_h2d_events[(n_diag_blocks - 2) %
+                             2].record(stream=compute_stream)
     L_arrow_tip_block_d.set(arr=L_arrow_tip_block[:, :], stream=compute_stream)
 
     with compute_stream:
@@ -257,7 +303,8 @@ def _streaming_pobtasi(
             L_arrow_tip_block_d[:, :], cp.eye(arrow_blocksize), lower=True
         )
 
-        X_arrow_tip_block_d[:, :] = L_last_blk_inv_d.conj().T @ L_last_blk_inv_d
+        X_arrow_tip_block_d[:, :] = L_last_blk_inv_d.conj(
+        ).T @ L_last_blk_inv_d
         compute_arrow_tip_event.record(stream=compute_stream)
 
     # --- Device 2 Host transfers ---
@@ -294,9 +341,11 @@ def _streaming_pobtasi(
         ]
 
         X_arrow_bottom_blocks_d[(n_diag_blocks - 1) % 2, :, :] = (
-            -X_arrow_tip_block_d[:, :] @ L_arrow_bottom_blocks_d_i[:, :] @ L_blk_inv_d
+            -X_arrow_tip_block_d[:,
+                                 :] @ L_arrow_bottom_blocks_d_i[:, :] @ L_blk_inv_d
         )
-        compute_arrow_events[(n_diag_blocks - 1) % 2].record(stream=compute_stream)
+        compute_arrow_events[(n_diag_blocks - 1) %
+                             2].record(stream=compute_stream)
 
         # X_{ndb, ndb} = (L_{ndb, ndb}^{-T} - X_{ndb+1, ndb}^{T} L_{ndb+1, ndb}) L_{ndb, ndb}^{-1}
         X_diagonal_blocks_d[(n_diag_blocks - 1) % 2, :, :] = (
@@ -304,7 +353,8 @@ def _streaming_pobtasi(
             - X_arrow_bottom_blocks_d[(n_diag_blocks - 1) % 2, :, :].conj().T
             @ L_arrow_bottom_blocks_d_i[:, :]
         ) @ L_blk_inv_d
-        compute_diagonal_events[(n_diag_blocks - 1) % 2].record(stream=compute_stream)
+        compute_diagonal_events[(n_diag_blocks - 1) %
+                                2].record(stream=compute_stream)
 
     # --- Device 2 Host transfers ---
     d2h_stream.wait_event(compute_arrow_events[(n_diag_blocks - 1) % 2])
@@ -352,9 +402,11 @@ def _streaming_pobtasi(
 
             # --- Off-diagonal block part ---
             compute_stream.wait_event(h2d_lower_events[i % 2])
-            L_lower_diagonal_blocks_d_i[:, :] = L_lower_diagonal_blocks_d[i % 2, :, :]
+            L_lower_diagonal_blocks_d_i[:,
+                                        :] = L_lower_diagonal_blocks_d[i % 2, :, :]
             compute_stream.wait_event(h2d_arrow_events[i % 2])
-            L_arrow_bottom_blocks_d_i[:, :] = L_arrow_bottom_blocks_d[i % 2, :, :]
+            L_arrow_bottom_blocks_d_i[:,
+                                      :] = L_arrow_bottom_blocks_d[i % 2, :, :]
             # X_{i+1, i} = (-X_{i+1, i+1} L_{i+1, i} - X_{ndb+1, i+1}^{T} L_{ndb+1, i}) L_{i, i}^{-1}
             X_lower_diagonal_blocks_d[i % 2, :, :] = (
                 -X_diagonal_blocks_d[(i + 1) % 2, :, :]
@@ -362,7 +414,8 @@ def _streaming_pobtasi(
                 - X_arrow_bottom_blocks_d[(i + 1) % 2, :, :].conj().T
                 @ L_arrow_bottom_blocks_d_i[:, :]
             ) @ L_blk_inv_d
-            compute_diagonal_h2d_events[(i + 1) % 2].record(stream=compute_stream)
+            compute_diagonal_h2d_events[(i + 1) %
+                                        2].record(stream=compute_stream)
             compute_lower_events[i % 2].record(stream=compute_stream)
 
             # --- Arrowhead part ---
@@ -389,13 +442,15 @@ def _streaming_pobtasi(
         # --- Device 2 Host transfers ---
         d2h_stream.wait_event(compute_lower_events[i % 2])
         X_lower_diagonal_blocks_d[i % 2, :, :].get(
-            out=X_lower_diagonal_blocks[i, :, :], stream=d2h_stream, blocking=False
+            out=X_lower_diagonal_blocks[i, :,
+                                        :], stream=d2h_stream, blocking=False
         )
         d2h_lower_events[i % 2].record(stream=d2h_stream)
 
         d2h_stream.wait_event(compute_arrow_events[i % 2])
         X_arrow_bottom_blocks_d[i % 2, :, :].get(
-            out=X_arrow_bottom_blocks[i, :, :], stream=d2h_stream, blocking=False
+            out=X_arrow_bottom_blocks[i, :,
+                                      :], stream=d2h_stream, blocking=False
         )
 
         d2h_stream.wait_event(compute_diagonal_events[i % 2])

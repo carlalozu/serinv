@@ -72,45 +72,67 @@ def scpobaf(
         L_arrow_tip = xp.copy(A_arrow_tip)
 
     L_i1i1 = xp.zeros((n_offdiags, n_offdiags), dtype=L_diagonal.dtype)
+    arrow, _ = L_arrow_bottom.shape
     # Process banded part of the matrix
+    FLOPS:int = 0
     for i in range(n_diagonals-1):
 
         # L_{i, i} = chol(A_{i, i})
         L_diagonal[i] = xp.sqrt(L_diagonal[i])
+        FLOPS += 1  # 1 sqrt
+
+        inv_L_ii = 1 / L_diagonal[i].conj()
+        FLOPS += 1 # 1 div
 
         # Update column i of the lower diagonals
         L_lower_diagonals[:-1, i] -= L_i1i1[:, 0].conj().T @ L_i1i1[:, 1:]
+        FLOPS += 2 * n_offdiags*(n_offdiags-1)  # matrix product, 1 mult, 1 add
 
         # L_{i+1, i} = A_{i+1, i} @ L_{i, i}^{-T}
-        L_lower_diagonals[:, i] /= L_diagonal[i].conj()
+        L_lower_diagonals[:, i] *= inv_L_ii
+        FLOPS += n_offdiags  # vector scaling ns
+
+        # data movement, no computational FLOPS
         L_i1i1[:-1, :-1] = L_i1i1[1:, 1:]
         L_i1i1[-1, :] = L_lower_diagonals[:, i]
 
         # L_{ndb+1, i} = A_{ndb+1, i} @ L_{i, i}^{-T}
-        L_arrow_bottom[:, i] /= L_diagonal[i].conj()
+        L_arrow_bottom[:, i] *= inv_L_ii
+        FLOPS += arrow  # vector scaling nb
 
         # A_{ndb+1, i+1} = A_{ndb+1, i+1} - L_{ndb+1, i} @ L_{i+1, i}.conj().T
         L_arrow_bottom[:, i+1] -= L_arrow_bottom[:, max(0, i-n_offdiags+1):i+1] @ \
             L_i1i1[max(-n_offdiags, -i)-1:, 0].conj().T
+        a, b = L_arrow_bottom[:, max(0, i-n_offdiags+1):i+1].shape
+        # FLOPS += 2 * arrow * n_offdiags  # matrix times vector (ns-1)*ns
+        FLOPS += 2 * a * b  # matrix times vector (ns-1)*ns
 
         # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, i} @ L_{ndb+1, i}.conj().T
-        L_arrow_tip[:, :] -= L_arrow_bottom[:, i:i+1] @ L_arrow_bottom[:, i:i+1].conj().T
+        L_arrow_tip[:, :] -= L_arrow_bottom[:, i:i + 1] @ L_arrow_bottom[:, i:i+1].conj().T
+        FLOPS += 2 * arrow**2  # outer product, one mult one add
 
         # Update next diagonal
         # A_{i+1, i+1} = A_{i+1, i+1} - L_{i+1, i} @ L_{i+1, i}.conj().T
         L_diagonal[i+1] -= L_i1i1[:, 0] @ L_i1i1[:, 0].conj().T
+        FLOPS += 2 * n_offdiags  # dot product
 
     # L_{ndb, ndb} = chol(A_{ndb, ndb})
     L_diagonal[-1] = xp.sqrt(L_diagonal[-1])
+    FLOPS += 1  # 1 sqrt
 
     # L_{ndb+1, ndb} = A_{ndb+1, ndb} @ L_{ndb, ndb}^{-T}
-    L_arrow_bottom[:, -1] = L_arrow_bottom[:, -1] / L_diagonal[-1].conj()
+    L_arrow_bottom[:, -1] *= (1/L_diagonal[-1].conj())
+    FLOPS += 1 # div
+    FLOPS += arrow  # vector scaling nb
 
     # A_{ndb+1, ndb+1} = A_{ndb+1, ndb+1} - L_{ndb+1, ndb} @ L_{ndb+1, ndb}^{T}
-    L_arrow_tip[:, :] -= L_arrow_bottom[:, -1:] @ \
-        L_arrow_bottom[:, -1:].conj().T
+    L_arrow_tip[:, :] -= L_arrow_bottom[:, - 1:] @ L_arrow_bottom[:, -1:].conj().T
+    FLOPS += 2 * arrow**2  # outer product, one mult one add
 
     # L_{ndb+1, ndb+1} = chol(A_{ndb+1, ndb+1})
     L_arrow_tip[:, :] = cholesky(L_arrow_tip[:, :])
+    FLOPS += 1/3*arrow**3 + 1/2*arrow**2 + 1/6*arrow  # cholesky
+
+    print(FLOPS)
 
     return L_diagonal, L_lower_diagonals, L_arrow_bottom, L_arrow_tip

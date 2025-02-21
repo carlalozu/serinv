@@ -13,7 +13,7 @@ from numpy.typing import ArrayLike
 
 
 if CUPY_AVAIL:
-    xp = cp 
+    xp = cp
     la = cu_la
 else:
     xp = np
@@ -59,6 +59,21 @@ def scpobasi(
     matrix_size = L_diagonal.shape[0]
     arrowhead_size = L_arrow_tip.shape[0]
 
+    FLOPS = 0
+    counts = {
+        'triangular_solve_nb3': 0,
+        'vector_scaling_ns': 0,
+        'vector_scaling_nb': 0,
+        'element_scaling': 0,
+        'div': 0,
+        'dot_product_ns': 0,
+        'dot_product_nb': 0,
+        'matrix_vector_nsns': 0,
+        'matrix_vector_nsnb': 0,
+        'matrix_vector_nbnb': 0,
+        'DGEMM_nb3': 0,
+    }
+
     # Initialize result matrices
     if overwrite:
         X_diagonal = L_diagonal
@@ -75,18 +90,34 @@ def scpobasi(
     inv_L_Dndb1 = la.solve_triangular(
         # L_{ndb+1, ndb+1}^{-1}
         L_arrow_tip[:, :], xp.eye(arrowhead_size), lower=True)
+    counts['triangular_solve_nb3'] += 1
+    FLOPS += 1/3 * arrowhead_size**3 + 1/2 * arrowhead_size**2 + 1/6 * arrowhead_size
 
     inv_L_Dndb = 1/X_diagonal[-1]  # # L_{ndb, ndb}^{-1}
+    counts['div'] += 1
+    FLOPS += 1
+
     L_Fndb = xp.copy(X_arrow_bottom[:, -1])  # L_{ndb+1, ndb}
 
     # X_{ndb+1, ndb+1}
     X_arrow_tip[:, :] = inv_L_Dndb1.conj().T @ inv_L_Dndb1
+    counts['DGEMM_nb3'] += 1
+    FLOPS += 2 * arrowhead_size**3
 
     # X_{ndb+1,ndb}
-    X_arrow_bottom[:, -1] = - X_arrow_tip[:, :] @ L_Fndb * inv_L_Dndb
+    X_arrow_bottom[:, -1] = - (X_arrow_tip[:, :] @ L_Fndb) * inv_L_Dndb
+    counts['matrix_vector_nbnb'] += 1
+    FLOPS += 2 * arrowhead_size * arrowhead_size
+    counts['vector_scaling_nb'] += 1
+    FLOPS += arrowhead_size
+
     # X_{ndb,ndb}
-    X_diagonal[-1] = inv_L_Dndb*inv_L_Dndb.conj() - \
-        L_Fndb.conj().T @ X_arrow_bottom[:, -1] * inv_L_Dndb
+    X_diagonal[-1] = (inv_L_Dndb.conj() - \
+        (L_Fndb.conj().T @ X_arrow_bottom[:, -1])) * inv_L_Dndb
+    counts['dot_product_nb'] += 1
+    FLOPS += 2 * arrowhead_size
+    counts['element_scaling'] += 1
+    FLOPS += 1
 
     X_i1i1 = xp.zeros((n_offdiags, n_offdiags), dtype=L_diagonal.dtype)
     X_i1i1[0, 0] = X_diagonal[-1]
@@ -99,11 +130,13 @@ def scpobasi(
 
         # Inverse of the L diagonal value i, L_{i, i}^{-1}
         iL_Di = 1/X_diagonal[matrix_size-i]
+        counts['div'] += 1
+        FLOPS += 1
+
         # L arrow bottom slice i, L_{ndb+1, i}
         L_Fi = xp.copy(X_arrow_bottom[:, matrix_size-i])
         # L lower diagonal slice, L_{i+1, i}
         L_Ei = xp.copy(X_lower_diagonals[:tail, matrix_size-i])
-
         # X arrow bottom slice i+i, X_{ndb+1, i+1}
         X_ndb1_i1 = X_arrow_bottom[:, matrix_size-i+1:matrix_size-i+1+tail]
 
@@ -112,8 +145,15 @@ def scpobasi(
         #              X_{ndb+1, i+1}^{T} L_{ndb+1, i}) L_{i, i}^{-1}
         X_i1_i = - (X_i1i1[:tail, :tail] @ L_Ei +
                     X_ndb1_i1.conj().T @ L_Fi) * iL_Di
-        X_lower_diagonals[:tail, matrix_size-i] = X_i1_i
+        counts['matrix_vector_nsns'] += 1
+        FLOPS += 2 * tail**2
+        counts['matrix_vector_nsnb'] += 1
+        FLOPS += 2 * tail * arrowhead_size
+        counts['vector_scaling_ns'] += 1
+        FLOPS += tail
 
+        # Data movement
+        X_lower_diagonals[:tail, matrix_size-i] = X_i1_i
         X_i1i1[1:, 1:] = X_i1i1[:-1, :-1]
         X_i1i1[1:min(i, n_offdiags), 0] = X_i1_i[:min(i, n_offdiags-1)]
         X_i1i1[0, 1:min(i, n_offdiags)] = X_i1_i[:min(i, n_offdiags-1)].conj()
@@ -123,6 +163,12 @@ def scpobasi(
         #                X_{ndb+1, ndb+1} L_{ndb+1, i}) L_{i, i}^{-1}
         X_arrow_bottom[:, matrix_size-i] = - \
             (X_ndb1_i1 @ L_Ei + X_arrow_tip[:, :] @ L_Fi) * iL_Di
+        counts['matrix_vector_nsnb'] += 1
+        FLOPS += 2 * tail * arrowhead_size
+        counts['matrix_vector_nbnb'] += 1
+        FLOPS += 2 * arrowhead_size**2
+        counts['vector_scaling_nb'] += 1
+        FLOPS += arrowhead_size
 
         # --- Diagonal value part ---
         # X_{i, i} = (L_{i, i}^{-T} - X_{i+1, i}^{T} L_{i+1, i} -
@@ -131,6 +177,17 @@ def scpobasi(
             iL_Di.conj().T - X_i1_i.conj().T @ L_Ei -
             X_arrow_bottom[:, matrix_size-i].conj().T @ L_Fi
         ) * iL_Di
+        counts['dot_product_ns'] += 1
+        FLOPS += 2 * tail
+        counts['dot_product_nb'] += 1
+        FLOPS += 2 * arrowhead_size
+        counts['element_scaling'] += 1
+        FLOPS += 1
+
+
         X_i1i1[0, 0] = X_diagonal[matrix_size-i]
+
+    print(counts)
+    print(FLOPS)
 
     return (X_diagonal, X_lower_diagonals, X_arrow_bottom, X_arrow_tip)

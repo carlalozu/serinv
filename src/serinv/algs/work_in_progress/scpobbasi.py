@@ -15,7 +15,7 @@ from numpy.typing import ArrayLike
 
 
 if CUPY_AVAIL:
-    xp = cp 
+    xp = cp
     la = cu_la
 else:
     xp = np
@@ -56,7 +56,6 @@ def scpobbasi(
         L[-arrow_blocksize:, -arrow_blocksize:], np.eye(arrow_blocksize), lower=True
     )
     X[-arrow_blocksize:, -arrow_blocksize:] = L_last_blk_inv.T @ L_last_blk_inv
-
     L_blk_inv = np.zeros((diag_blocksize, diag_blocksize), dtype=L.dtype)
     n_diag_blocks = (L.shape[0] - arrow_blocksize) // diag_blocksize
     n_offdiags_blk = ndiags // 2
@@ -264,13 +263,27 @@ def scpobbasi_c(
     # Number of lower diagonals, total bandwidth is n_offdiags_blk*2+1
     n_offdiags_blk = X_lower_diagonal_blocks.shape[1]//diag_blocksize
 
+    FLOPS = 0
+    counts = {
+        'triangular_solve_ns3': 0,
+        'triangular_solve_nb3': 0,
+        'DGEMM_ns3': 0,
+        'DGEMM_ns2nb': 0,
+        'DGEMM_nsnb2': 0,
+        'DGEMM_nb3': 0
+    }
 
     L_last_blk_inv = la.solve_triangular(
         X_arrow_tip_block[:, :],
         xp.eye(arrow_blocksize),
         lower=True
     )
+    counts['triangular_solve_nb3'] += 1
+    FLOPS += arrow_blocksize**3
+    
     X_arrow_tip_block[:, :] = L_last_blk_inv.conj().T @ L_last_blk_inv
+    counts['DGEMM_nb3'] += 1
+    FLOPS += 2 * arrow_blocksize**3
 
     L_blk_inv = xp.empty_like(L_diagonal_blocks[0, :, :])
     L_lower_diagonal_blocks_i = xp.empty_like(X_lower_diagonal_blocks[0, :, :])
@@ -281,6 +294,8 @@ def scpobbasi_c(
         xp.eye(diag_blocksize),
         lower=True,
     )
+    counts['triangular_solve_ns3'] += 1
+    FLOPS += diag_blocksize**3
 
     L_arrow_bottom_blocks_i[:, :] = xp.copy(X_arrow_bottom_blocks[-1, :, :])
 
@@ -288,18 +303,30 @@ def scpobbasi_c(
     X_arrow_bottom_blocks[-1, :, :] = (
         -X_arrow_tip_block[:, :] @ L_arrow_bottom_blocks_i[:, :] @ L_blk_inv
     )
+    counts['DGEMM_nsnb2'] += 1
+    FLOPS += 2 * arrow_blocksize**2 * diag_blocksize
+    counts['DGEMM_ns2nb'] += 1
+    FLOPS += 2 * arrow_blocksize * diag_blocksize**2
+
+    print(diag_blocksize, arrow_blocksize)
 
     # X_{ndb, ndb} = (L_{ndb, ndb}^{-T} - X_{ndb+1, ndb}^{T} L_{ndb+1, ndb}) L_{ndb, ndb}^{-1}
     X_diagonal_blocks[-1, :, :] = (
         L_blk_inv.conj().T
-        - X_arrow_bottom_blocks[-1, :, :].conj().T @ L_arrow_bottom_blocks_i[:, :]
+        - X_arrow_bottom_blocks[-1, :,
+                                :].conj().T @ L_arrow_bottom_blocks_i[:, :]
     ) @ L_blk_inv
+    counts['DGEMM_ns2nb'] += 1
+    FLOPS += 2 * diag_blocksize**2 * arrow_blocksize
+    counts['DGEMM_ns3'] += 1
+    FLOPS += 2 * diag_blocksize**3
 
     for i in range(n_diag_blocks - 2, -1, -1):
 
         # Temporary variables to save original L values
         L_arrow_bottom_blocks_i[:, :] = xp.copy(X_arrow_bottom_blocks[i, :])
-        L_lower_diagonal_blocks_i[:, :] = xp.copy(X_lower_diagonal_blocks[i, :, :])
+        L_lower_diagonal_blocks_i[:, :] = xp.copy(
+            X_lower_diagonal_blocks[i, :, :])
 
         # L_blk_inv = L_{i, i}^{-1}
         L_blk_inv[:, :] = la.solve_triangular(
@@ -307,12 +334,17 @@ def scpobbasi_c(
             xp.eye(diag_blocksize),
             lower=True,
         )
+        counts['triangular_solve_ns3'] += 1
+        FLOPS += diag_blocksize**3
 
         # Arrowhead part
         # X_{ndb+1, i} = - X_{ndb+1, ndb+1} L_{ndb+1, i}
         X_arrow_bottom_blocks[i, :] = (
             -X_arrow_tip_block[:, :] @ X_arrow_bottom_blocks[i, :]
         )
+        counts['DGEMM_nsnb2'] += 1
+        FLOPS += 2 * arrow_blocksize**2 * diag_blocksize
+
         for k in range(i + 1, min(i + n_offdiags_blk + 1, n_diag_blocks), 1):
             # X_{ndb+1, i} = X_{ndb+1, i} - X_{ndb+1, k} L_{k, i}
             X_arrow_bottom_blocks[i, :] -= (
@@ -320,8 +352,12 @@ def scpobbasi_c(
                 X_lower_diagonal_blocks[
                     i, (k - i - 1) * diag_blocksize: (k - i) * diag_blocksize, :]
             )
+            counts['DGEMM_ns2nb'] += 1
+            FLOPS += 2 * arrow_blocksize * diag_blocksize**2
         # X_{ndb+1, i} = X_{ndb+1, i} L_{i, i}^{-1}
         X_arrow_bottom_blocks[i, :] @= L_blk_inv
+        counts['DGEMM_ns2nb'] += 1
+        FLOPS += 2 * arrow_blocksize * diag_blocksize**2
 
         # Off-diagonal block part
         for j in range(min(i + n_offdiags_blk, n_diag_blocks - 1), i, -1):
@@ -330,6 +366,8 @@ def scpobbasi_c(
             X_lower_diagonal_blocks[
                 i, (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
             ] = -X_arrow_bottom_blocks[j, :].conj().T @ L_arrow_bottom_blocks_i
+            counts['DGEMM_ns2nb'] += 1
+            FLOPS += 2 * arrow_blocksize * diag_blocksize**2
 
             for k in range(i + 1, j):
                 # X_{j, i} = X_{j, i} - X_{j, k} @ L_{k, i}, k<j
@@ -341,6 +379,9 @@ def scpobbasi_c(
                     ] @ L_lower_diagonal_blocks_i[
                         (k - i - 1) * diag_blocksize: (k - i) * diag_blocksize, :]
                 )
+                counts['DGEMM_ns3'] += 1
+                FLOPS += 2 * diag_blocksize**3
+
             # X_{j, i} = X_{j, i} - X_{j, j} @ L_{j, i}, k=j
             X_lower_diagonal_blocks[
                 i, (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
@@ -349,6 +390,8 @@ def scpobbasi_c(
                     (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
                 ]
             )
+            counts['DGEMM_ns3'] += 1
+            FLOPS += 2 * diag_blocksize**3
             for k in range(j+1, min(i + n_offdiags_blk + 1, n_diag_blocks)):
                 # X_{j, i} = X_{j, i} - X_{k, j}.T @ L_{k, i}, k>j
                 X_lower_diagonal_blocks[
@@ -360,10 +403,14 @@ def scpobbasi_c(
                         (k - i - 1) * diag_blocksize: (k - i) * diag_blocksize, :
                     ]
                 )
+                counts['DGEMM_ns3'] += 1
+                FLOPS += 2 * diag_blocksize**3
             # X_{j, i} = X_{j, i} L_{i, i}^{-1}
             X_lower_diagonal_blocks[
                 i, (j - i - 1) * diag_blocksize: (j - i) * diag_blocksize, :
             ] @= L_blk_inv
+            counts['DGEMM_ns3'] += 1
+            FLOPS += 2 * diag_blocksize**3
 
         # Diagonal block part
         # X_{i, i} = L_{i, i}^{-T} - X_{ndb+1, i}.T L_{ndb+1, i}
@@ -371,6 +418,9 @@ def scpobbasi_c(
             L_blk_inv.conj().T - X_arrow_bottom_blocks[
                 i, :].conj().T @ L_arrow_bottom_blocks_i
         )
+        counts['DGEMM_ns2nb'] += 1
+        FLOPS += 2 * diag_blocksize**2 * arrow_blocksize
+
         for k in range(i + 1, min(i + n_offdiags_blk + 1, n_diag_blocks), 1):
             # X_{i, i} = X_{i, i} - X_{k, i}.T L_{k, i}
             X_diagonal_blocks[i, :, :] -= (
@@ -381,8 +431,14 @@ def scpobbasi_c(
                     (k - i - 1) * diag_blocksize: (k - i) * diag_blocksize, :
                 ]
             )
+            counts['DGEMM_ns3'] += 1
+            FLOPS += 2 * diag_blocksize**3
         # X_{i, i} = X_{i, i} L_{i, i}^{-1}
         X_diagonal_blocks[i, :, :] @= L_blk_inv
+        counts['DGEMM_ns3'] += 1
+        FLOPS += 2 * diag_blocksize**3
 
+    print(f"Total FLOPS: {FLOPS}")
+    print(counts)
     return (X_diagonal_blocks, X_lower_diagonal_blocks,
             X_arrow_bottom_blocks, X_arrow_tip_block)
