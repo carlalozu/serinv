@@ -79,7 +79,7 @@ def scpobaf(
         L_diagonal[i] = xp.sqrt(L_diagonal[i])
 
         # Inverse of the L diagonal value i, L_{i, i}^{-1}
-        iL_diagonal = L_diagonal[i].conj()
+        iL_diagonal = 1/L_diagonal[i].conj()
 
         # Update column i of the lower diagonals
         L_lower_diagonals[:-1, i] -= L_i1i1[:, 0].conj().T @ L_i1i1[:, 1:]
